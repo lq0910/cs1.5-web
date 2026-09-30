@@ -888,12 +888,16 @@ function frame(now: number): void {
         price: item.price,
         affordable: playerActor.unlimitedFunds || playerActor.money >= item.price,
       })),
-      // 功能：按玩家朝向旋转队友坐标并限制在圆形雷达半径内。时间：2026-09-29；作者：lq。
-      radarDots: match.actors.filter((actor) => actor.team === hudActor.team && actor !== hudActor && actor.alive).map((actor) => {
+      // 功能：按玩家朝向旋转所有存活角色坐标并限制在圆形雷达半径内，敌我用不同颜色区分。时间：2026-09-30；作者：lq。
+      radarDots: match.actors.filter((actor) => actor !== hudActor && actor.alive).map((actor) => {
         const dx = actor.move.origin.x - hudActor.move.origin.x;
         const dy = actor.move.origin.y - hudActor.move.origin.y;
         const yaw = (alive ? lookYaw : hudActor.yaw) * Math.PI / 180;
-        return { x: 50 + (-dx * Math.sin(yaw) + dy * Math.cos(yaw)) / 18, y: 50 - (dx * Math.cos(yaw) + dy * Math.sin(yaw)) / 18 };
+        return {
+          x: 50 + (-dx * Math.sin(yaw) + dy * Math.cos(yaw)) / 18,
+          y: 50 - (dx * Math.cos(yaw) + dy * Math.sin(yaw)) / 18,
+          relation: actor.team === hudActor.team ? 'ally' as const : 'enemy' as const,
+        };
       }),
       dead: !alive,
       spectating: spectator?.name ?? null,

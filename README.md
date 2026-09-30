@@ -4,7 +4,7 @@
 
 本项目仅供个人学习研究、自玩娱乐使用，不作商业用途。Counter-Strike 名称及原版地图、模型、音效等素材的权利归各自权利人所有。本仓库不包含原版游戏素材，也不提供原版安装包；请自行确认素材来源和使用许可。
 
-当前支持选择 CT/T 阵营。默认地图为 `de_dust2`（需自行准备地图素材），每队 4 人；玩家与 BOT 共用回合、武器和 C4 规则。内置 `white_house` 地图可由项目工具生成。
+当前支持选择 CT/T 阵营。默认地图为 `de_dust2`（需自行准备地图素材），每队 4 人；玩家与 BOT 共用回合、武器和 C4 规则。原版“72街仓库”地图名为 `cs_assault`；项目另有一张自制的 `white_house` 双层房屋移动测试地图，两者不是同一张图。
 
 ---
 
@@ -13,11 +13,11 @@
 ```bash
 cd cs15-web
 pnpm install          # 首次
-pnpm make-bsp         # 把内置白房子编译成真 BSP + WAD（首次或改了地图后跑）
+pnpm make-bsp         # 把内置 white_house 移动测试地图编译成 BSP + WAD（首次或改了地图后跑）
 pnpm dev              # 打开终端显示的本地地址
 ```
 
-仓库不附带原版素材。要加载原版地图、模型与音效，请先将你合法持有的 CS 1.5 安装文件放在本机，再按下文“原版地图”一节运行提取工具。未准备原版素材时，可运行 `pnpm make-bsp` 后用 `?map=white_house` 体验内置地图。
+仓库不附带原版素材。要加载原版地图、模型与音效，请先将你合法持有的 CS 1.5 安装文件放在本机，再按下文“原版地图”一节运行提取工具。未准备原版素材时，可运行 `pnpm make-bsp` 后用 `?map=white_house` 体验内置移动测试地图。
 
 > **Node 版本注意**：用 nvm 装的 Node（v18 以上，推荐 v20/v22）即可。
 > 若 `pnpm dev` 报 `Cannot find module ...rolldown-binding...node`，说明该 Node 开了
@@ -29,7 +29,7 @@ pnpm dev              # 打开终端显示的本地地址
 | `pnpm build` | 类型检查 + 生产构建到 `dist/` |
 | `pnpm test` | 无头测试（物理、几何、BSP/WAD、武器弹道、购买快捷键、手雷落地爆炸、回合与完整 4v4 对局） |
 | `pnpm typecheck` | 只做类型检查 |
-| `pnpm make-bsp` | 把内置盒子地图编译成 `public/cstrike/maps/white_house.bsp` + `white_house.wad` |
+| `pnpm make-bsp` | 把内置移动测试地图编译成 `public/cstrike/maps/white_house.bsp` + `white_house.wad` |
 | `pnpm list-maps -- "<cstrike目录>"` | 列出本地 CS 安装里的地图与 WAD |
 
 ## 操作
@@ -69,7 +69,7 @@ pnpm dev              # 打开终端显示的本地地址
 | de_aztec | 4497 | 17 → 126 KB | http://127.0.0.1:5173/?map=de_aztec |
 | de_inferno | 7611 | 26 → 377 KB | http://127.0.0.1:5173/?map=de_inferno |
 | cs_office | 9384 | 113 → 833 KB | http://127.0.0.1:5173/?map=cs_office |
-| cs_assault（72街仓库）| 3206 | 182 → 2.2 MB | http://127.0.0.1:5173/?map=cs_assault |
+| **cs_assault（72街仓库）**| 3206 | 182 → 2.2 MB | http://127.0.0.1:5173/?map=cs_assault |
 | cs_italy | 8528 | 102 → 1.7 MB | http://127.0.0.1:5173/?map=cs_italy |
 | cs_747 | 7625 | 164 → 2.3 MB | http://127.0.0.1:5173/?map=cs_747 |
 | white_house（内置测试图）| 318 | 2 → 12 KB | http://127.0.0.1:5173/?map=white_house |
@@ -168,9 +168,9 @@ GoldSrc 的面绕序与 OpenGL/three.js 期望的**相反**：按平面法线校
 
 例如 `?map=de_dust2&lm=1.6` 会把阴影里的 luxel 32 从 64 提到 108。
 
-## 内置白房子
+## 内置移动测试地图
 
-`pnpm make-bsp` 会把内置的 `white_house` 编译成真正的 BSP v30 文件（约 105 KB、318 面、331 叶子、1163 clipnode），其中两张贴图**故意放到 WAD 里**，走的是和原版 dust2 完全一样的"BSP 引用 → WAD 查表"路径。地图本身是移动实验室：
+原版“72街仓库”对应 `cs_assault`，使用从原版素材转换的地图文件。项目内的 `white_house` 则是独立制作的移动测试地图，不是 `cs_assault`，也不是原版地图。运行 `pnpm make-bsp` 会把它编译成真正的 BSP v30 文件（约 105 KB、318 面、331 叶子、1163 clipnode），其中两张贴图**故意放到 WAD 里**，走的是和原版 dust2 一样的"BSP 引用 → WAD 查表"路径。地图本身是移动实验室：
 
 - 长直道 → 地面加速 / 极速 · 薄长墙 → `PM_SlideMove` 贴墙滑行
 - 4 级 16 单位台阶 → `PM_StepSlideMove` 自动上台阶（stepsize 18）

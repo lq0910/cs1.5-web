@@ -398,12 +398,14 @@
       #hitmarker::before, #hitmarker::after { content: ''; position: absolute; left: 9px; top: 0; width: 2px; height: 20px; background: #fff; box-shadow: 0 0 2px #000; }
       #hitmarker::before { transform: rotate(45deg); }
       #hitmarker::after { transform: rotate(-45deg); }
-      /* 功能：以圆形雷达显示原版队友方位，不占用战斗画面中央。时间：2026-09-29；作者：lq。 */
+      /* 功能：以圆形雷达显示队友与敌方方位，不占用战斗画面中央。时间：2026-09-30；作者：lq。 */
       #radar { position: fixed; left: 18px; top: 18px; width: 118px; height: 118px; z-index: 10; border: 2px solid rgba(210, 190, 112, 0.72); border-radius: 50%; background: rgba(18, 26, 17, 0.4); overflow: hidden; pointer-events: none; }
       #radar::before, #radar::after { content: ''; position: absolute; background: rgba(210, 190, 112, 0.22); }
       #radar::before { left: 50%; top: 0; width: 1px; height: 100%; }
       #radar::after { top: 50%; left: 0; height: 1px; width: 100%; }
-      #radar .self, #radar .ally { position: absolute; width: 6px; height: 6px; transform: translate(-50%, -50%); border-radius: 50%; background: #bde68a; box-shadow: 0 0 5px #050; }
+      #radar .self, #radar .ally, #radar .enemy { position: absolute; width: 6px; height: 6px; transform: translate(-50%, -50%); border-radius: 50%; box-shadow: 0 0 5px #050; }
+      #radar .ally { background: #bde68a; }
+      #radar .enemy { background: #f06b5f; box-shadow: 0 0 5px #500; }
       #radar .self { left: 50%; top: 50%; background: #fff1a5; }
       /* 功能：闪光弹爆炸时短暂覆盖白屏，并随时间淡出。时间：2026-09-29；作者：lq。 */
       #flashbang { position: fixed; inset: 0; z-index: 13; background: #fff; opacity: 0; pointer-events: none; }

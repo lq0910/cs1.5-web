@@ -54,8 +54,8 @@ export interface HudData {
   /** 功能：原版购买菜单先选择分类再按数字购买。时间：2026-09-29；作者：lq。 */
   buyCategory: string | null;
   buyItems: { digit: number; label: string; price: number; affordable: boolean }[];
-  /** 功能：雷达显示队友相对玩家的位置。时间：2026-09-29；作者：lq。 */
-  radarDots: { x: number; y: number }[];
+  /** 功能：雷达显示队友与敌人相对玩家的位置，并携带阵营关系用于区分颜色。时间：2026-09-30；作者：lq。 */
+  radarDots: { x: number; y: number; relation: 'ally' | 'enemy' }[];
   dead: boolean;
   /** 功能：阵亡观战对象、Tab 战绩和无线电字幕的数据。时间：2026-09-30；作者：lq。 */
   spectating: string | null;
@@ -144,9 +144,9 @@ export class Hud {
     this.crosshair.style.setProperty('--gap', `${gap.toFixed(1)}px`);
     this.crosshair.classList.toggle('scoped', data.scoped || data.dead);
     this.scope.classList.toggle('on', data.scoped && !data.dead);
-    // 功能：简化原版圆形雷达，中心为玩家，绿色点标记存活队友。时间：2026-09-29；作者：lq。
+    // 功能：简化原版圆形雷达，中心为玩家，绿色点标记队友、红色点标记敌人。时间：2026-09-30；作者：lq。
     this.radar.innerHTML = '<span class="self"></span>' + data.radarDots.map((dot) =>
-      `<span class="ally" style="left:${Math.max(4, Math.min(96, dot.x)).toFixed(1)}%;top:${Math.max(4, Math.min(96, dot.y)).toFixed(1)}%"></span>`,
+      `<span class="${dot.relation}" style="left:${Math.max(4, Math.min(96, dot.x)).toFixed(1)}%;top:${Math.max(4, Math.min(96, dot.y)).toFixed(1)}%"></span>`,
     ).join('');
 
     // Round bar.
