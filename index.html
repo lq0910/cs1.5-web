@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CS 1.5 Web — 浏览器版 CS 1.5</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #0b0d10;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        color: #d7e0ea;
+      }
+      #app {
+        position: fixed;
+        inset: 0;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      #hud {
+        position: fixed;
+        left: 12px;
+        top: 12px;
+        padding: 10px 12px;
+        border: 1px solid #2b3a4a;
+        border-radius: 6px;
+        background: rgba(8, 12, 18, 0.72);
+        font-size: 12px;
+        line-height: 1.55;
+        white-space: pre;
+        pointer-events: none;
+        z-index: 10;
+      }
+      #hud b {
+        color: #ffd479;
+        font-weight: 600;
+      }
+      #crosshair {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        width: 22px;
+        height: 22px;
+        margin: -11px 0 0 -11px;
+        pointer-events: none;
+        z-index: 10;
+        opacity: 0;
+        transition: opacity 0.15s;
+      }
+      #crosshair.on {
+        opacity: 1;
+      }
+      /* Dynamic crosshair: the four ticks sit at --gap from the centre. */
+      #crosshair {
+        width: 2px;
+        height: 2px;
+        margin: -1px 0 0 -1px;
+      }
+      #crosshair span {
+        position: absolute;
+        background: #4dff88;
+        box-shadow: 0 0 1px #000;
+      }
+      #crosshair span.top,
+      #crosshair span.bottom {
+        left: -1px;
+        width: 2px;
+        height: 9px;
+      }
+      #crosshair span.top {
+        bottom: var(--gap, 6px);
+      }
+      #crosshair span.bottom {
+        top: var(--gap, 6px);
+      }
+      #crosshair span.left,
+      #crosshair span.right {
+        top: -1px;
+        height: 2px;
+        width: 9px;
+      }
+      #crosshair span.left {
+        right: var(--gap, 6px);
+      }
+      #crosshair span.right {
+        left: var(--gap, 6px);
+      }
+      #crosshair.scoped {
+        display: none;
+      }
+      #scope {
+        position: fixed;
+        inset: 0;
+        z-index: 9;
+        pointer-events: none;
+        display: none;
+        background:
+          linear-gradient(to right, transparent calc(50% - 1px), #000 calc(50% - 1px), #000 calc(50% + 1px), transparent calc(50% + 1px)),
+          linear-gradient(to bottom, transparent calc(50% - 1px), #000 calc(50% - 1px), #000 calc(50% + 1px), transparent calc(50% + 1px));
+      }
+      #scope.on {
+        display: block;
+      }
+      #scope::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle at 50% 50%, rgba(0, 0, 0, 0) 27%, rgba(0, 0, 0, 0.55) 29%, #000 33%);
+      }
+      #status {
+        position: fixed;
+        right: 16px;
+        bottom: 14px;
+        z-index: 10;
+        pointer-events: none;
+        text-align: right;
+        text-shadow: 0 1px 2px #000;
+      }
+      #status .wpn {
+        display: block;
+        font-size: 13px;
+        color: #cfd8e4;
+        letter-spacing: 0.5px;
+      }
+      #status .ammo {
+        display: block;
+        font-size: 30px;
+        font-weight: 700;
+        color: #ffd479;
+        line-height: 1.1;
+      }
+      #status .hint {
+        display: block;
+        font-size: 12px;
+        color: #ff9d6b;
+      }
+      #status .vitals {
+        display: block;
+        margin-top: 6px;
+        font-size: 13px;
+        color: #9fb0c0;
+      }
+      #status .vitals b {
+        color: #7fe3a1;
+        font-size: 17px;
+      }
+      #status .money {
+        display: block;
+        margin-top: 2px;
+        font-size: 14px;
+        color: #b6e28a;
+      }
+      #roundbar {
+        position: fixed;
+        top: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 6px 14px;
+        border: 1px solid #2b3a4a;
+        border-radius: 6px;
+        background: rgba(8, 12, 18, 0.72);
+        font-size: 15px;
+        pointer-events: none;
+      }
+      #roundbar .score {
+        font-weight: 700;
+      }
+      #roundbar .score.ct {
+        color: #7fb2ff;
+      }
+      #roundbar .score.t {
+        color: #ff9d6b;
+      }
+      #roundbar .alive {
+        color: #9fb0c0;
+        font-size: 13px;
+      }
+      #roundbar .clock {
+        font-size: 20px;
+        font-weight: 700;
+        color: #ffd479;
+        min-width: 74px;
+        text-align: center;
+      }
+      #roundbar .clock.armed {
+        color: #ff5a5a;
+      }
+      #roundbar .clock.defused {
+        color: #7fe3a1;
+      }
+      #roundbar .bomb {
+        font-size: 12px;
+        color: #ffb69c;
+      }
+      #feed {
+        position: fixed;
+        top: 58px;
+        right: 16px;
+        z-index: 10;
+        text-align: right;
+        font-size: 12px;
+        pointer-events: none;
+        text-shadow: 0 1px 2px #000;
+      }
+      #feed .entry {
+        margin-bottom: 3px;
+        color: #cfd8e4;
+      }
+      #feed .entry .w {
+        margin: 0 6px;
+        color: #8b98a6;
+      }
+      #feed .entry b.me {
+        color: #ffd479;
+      }
+      #buymenu {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 12;
+        display: none;
+        min-width: 320px;
+        padding: 16px 20px;
+        border: 1px solid #2b3a4a;
+        border-radius: 8px;
+        background: rgba(8, 12, 18, 0.92);
+        font-size: 14px;
+      }
+      #buymenu.on {
+        display: block;
+      }
+      #buymenu h3 {
+        margin: 0 0 10px;
+        font-size: 15px;
+        color: #ffd479;
+      }
+      #buymenu h3 small {
+        color: #8b98a6;
+        font-weight: 400;
+      }
+      #buymenu .row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 4px 0;
+        color: #cfd8e4;
+      }
+      #buymenu .row em {
+        margin-left: auto;
+        font-style: normal;
+        color: #b6e28a;
+      }
+      #buymenu .row.poor {
+        color: #6b7684;
+      }
+      #buymenu .row.poor em {
+        color: #6b7684;
+      }
+      #buymenu kbd {
+        display: inline-block;
+        min-width: 18px;
+        padding: 1px 5px;
+        border: 1px solid #3d5068;
+        border-radius: 4px;
+        background: #16202b;
+        font-size: 12px;
+        text-align: center;
+      }
+      #centre {
+        position: fixed;
+        left: 50%;
+        top: 42%;
+        transform: translate(-50%, -50%);
+        z-index: 11;
+        display: none;
+        font-size: 26px;
+        font-weight: 700;
+        color: #ffd479;
+        text-shadow: 0 2px 6px #000;
+        pointer-events: none;
+        text-align: center;
+      }
+      #centre.on {
+        display: block;
+      }
+      #overlay {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: radial-gradient(circle at 50% 40%, rgba(20, 28, 38, 0.92), rgba(4, 6, 9, 0.97));
+        z-index: 20;
+      }
+      #overlay.hidden {
+        display: none;
+      }
+      #panel {
+        max-width: 620px;
+        padding: 26px 30px;
+        border: 1px solid #2b3a4a;
+        border-radius: 10px;
+        background: rgba(10, 14, 20, 0.9);
+        line-height: 1.7;
+        font-size: 13px;
+      }
+      #panel h1 {
+        margin: 0 0 6px;
+        font-size: 20px;
+        letter-spacing: 0.5px;
+      }
+      #panel h1 span {
+        color: #ffd479;
+      }
+      #panel p {
+        margin: 8px 0;
+        color: #9fb0c0;
+      }
+      #panel kbd {
+        display: inline-block;
+        min-width: 20px;
+        padding: 1px 6px;
+        margin: 0 2px;
+        border: 1px solid #3d5068;
+        border-bottom-width: 2px;
+        border-radius: 4px;
+        background: #16202b;
+        color: #e6eef7;
+        font-size: 12px;
+        text-align: center;
+      }
+      #panel button {
+        margin-top: 14px;
+        padding: 10px 20px;
+        border: 0;
+        border-radius: 6px;
+        background: #ffd479;
+        color: #171c22;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      #panel button:hover {
+        background: #ffe0a0;
+      }
+      /* 功能：按原版选队流程提供 CT/T 按钮，M 键重新打开选择面板。时间：2026-09-29；作者：lq。 */
+      #team-select { display: flex; gap: 10px; margin: 12px 0; }
+      #team-select button { flex: 1; margin-top: 0; background: #3a4034; color: #e7d8aa; border: 1px solid #77745a; }
+      #team-select button.selected { border-color: #f1d184; background: #725f37; color: #fff3cb; }
+      #nomap {
+        margin-top: 12px;
+        padding: 10px 12px;
+        border-left: 3px solid #ff8f6b;
+        background: rgba(255, 143, 107, 0.08);
+        color: #ffb69c;
+        font-size: 12px;
+        line-height: 1.6;
+      }
+      #nomap code {
+        color: #ffd479;
+      }
+      /* 功能：让战斗 HUD 接近 CS 1.5 的琥珀色角落数字，调试层按需显示。时间：2026-09-29；作者：lq。 */
+      #hud { display: none; }
+      #status { inset: auto 0 12px 0; height: 58px; right: 0; text-shadow: 1px 2px #17120a; color: #efc466; }
+      #status .vitals { position: absolute; left: 24px; bottom: 0; display: flex; gap: 28px; color: #e6c46f; font-size: 23px; }
+      #status .vitals b { color: #f1d184; font-size: 26px; }
+      #status .money { position: absolute; left: 24px; bottom: 44px; color: #e6c46f; font-size: 17px; }
+      #status .ammo { position: absolute; right: 24px; bottom: 0; display: block; font-size: 31px; color: #f1d184; }
+      #status .ammo small { display: block; font-size: 12px; color: #e1c37a; }
+      #status .kd { position: absolute; right: 24px; bottom: 43px; font-size: 12px; color: #e1c37a; }
+      #roundbar { background: transparent; border: 0; font-size: 13px; text-shadow: 1px 2px #17120a; }
+      #roundbar .clock { color: #e6c46f; }
+      #buymenu { left: 28px; top: 120px; transform: none; min-width: 260px; border: 1px solid #a68b4a; border-radius: 0; background: rgba(12, 12, 9, 0.86); color: #e7c77d; }
+      #buymenu h3, #buymenu .row em { color: #e7c77d; }
+      #buymenu .row { color: #e7c77d; }
+      #buymenu p { margin-bottom: 0; font-size: 12px; color: #b9a26e; }
+      #buymenu kbd { border: 1px solid #a68b4a; border-radius: 0; background: rgba(90, 70, 29, 0.35); color: #f1d184; }
+      /* 功能：命中敌人时在准星中心闪烁短暂的白色 X 反馈。时间：2026-09-29；作者：lq。 */
+      #hitmarker { position: fixed; left: 50%; top: 50%; width: 20px; height: 20px; transform: translate(-50%, -50%); z-index: 11; pointer-events: none; opacity: 0; }
+      #hitmarker.on { opacity: 1; }
+      #hitmarker::before, #hitmarker::after { content: ''; position: absolute; left: 9px; top: 0; width: 2px; height: 20px; background: #fff; box-shadow: 0 0 2px #000; }
+      #hitmarker::before { transform: rotate(45deg); }
+      #hitmarker::after { transform: rotate(-45deg); }
+      /* 功能：以圆形雷达显示原版队友方位，不占用战斗画面中央。时间：2026-09-29；作者：lq。 */
+      #radar { position: fixed; left: 18px; top: 18px; width: 118px; height: 118px; z-index: 10; border: 2px solid rgba(210, 190, 112, 0.72); border-radius: 50%; background: rgba(18, 26, 17, 0.4); overflow: hidden; pointer-events: none; }
+      #radar::before, #radar::after { content: ''; position: absolute; background: rgba(210, 190, 112, 0.22); }
+      #radar::before { left: 50%; top: 0; width: 1px; height: 100%; }
+      #radar::after { top: 50%; left: 0; height: 1px; width: 100%; }
+      #radar .self, #radar .ally { position: absolute; width: 6px; height: 6px; transform: translate(-50%, -50%); border-radius: 50%; background: #bde68a; box-shadow: 0 0 5px #050; }
+      #radar .self { left: 50%; top: 50%; background: #fff1a5; }
+      /* 功能：闪光弹爆炸时短暂覆盖白屏，并随时间淡出。时间：2026-09-29；作者：lq。 */
+      #flashbang { position: fixed; inset: 0; z-index: 13; background: #fff; opacity: 0; pointer-events: none; }
+      /* 功能：C4 引爆时叠加短促暖白闪光，远处玩家仍能感知终局爆炸。时间：2026-09-30；作者：lq。 */
+      #bombflash { position: fixed; inset: 0; z-index: 13; background: #ffe5b4; opacity: 0; pointer-events: none; }
+      /* 功能：将常驻界面收敛为原版 CS 1.5 的角落 HUD，战绩仅按 Tab 显示。时间：2026-09-30；作者：lq。 */
+      #status { left: 0; right: 0; bottom: 10px; height: 72px; font-family: Tahoma, Arial, sans-serif; }
+      #status .vitals { left: 24px; bottom: 0; gap: 22px; font-size: 24px; }
+      #status .vitals b { font-size: 27px; font-weight: 600; }
+      #status .money { left: 24px; bottom: 47px; font-size: 18px; }
+      #status .ammo { right: 25px; bottom: 0; font-size: 34px; line-height: 1; }
+      #status .ammo small { display: inline; margin-left: 4px; font-size: 21px; }
+      #roundbar { top: 11px; padding: 0; gap: 14px; font-family: Tahoma, Arial, sans-serif; }
+      #roundbar .clock { font-size: 24px; min-width: 68px; }
+      #roundbar .score { font-size: 14px; }
+      #centre.spectating { top: auto; bottom: 80px; font-size: 16px; }
+      /* 功能：C4 操作与安装进度采用紧凑黑底提示，便于对战时辨认。时间：2026-09-30；作者：lq。 */
+      #centre.objective { top: auto; bottom: 112px; padding: 7px 11px; background: rgba(8, 8, 6, 0.72); border: 1px solid rgba(230, 196, 111, 0.58); font-size: 15px; }
+      #radio-caption { position: fixed; left: 26px; bottom: 100px; z-index: 10; display: none; color: #e6c878; font: 15px Tahoma, Arial, sans-serif; text-shadow: 1px 2px #17120a; pointer-events: none; }
+      #radio-caption.on { display: block; }
+      #scoreboard { position: fixed; inset: 50% auto auto 50%; transform: translate(-50%, -50%); width: min(660px, 90vw); z-index: 15; display: none; padding: 14px 22px 22px; color: #eed99a; background: rgba(27, 31, 20, 0.88); border: 1px solid rgba(190, 180, 119, 0.6); font: 15px Tahoma, Arial, sans-serif; box-shadow: 0 10px 30px #0008; pointer-events: none; }
+      #scoreboard.on { display: block; }
+      #scoreboard .scoreboard-head { text-align: center; color: #f5e8bb; font-size: 18px; padding: 4px 0 14px; }
+      #scoreboard .scoreboard-team { display: flex; justify-content: space-between; padding: 5px 8px; margin-top: 8px; font-weight: 700; background: rgba(0, 0, 0, 0.32); }
+      #scoreboard .scoreboard-team.ct { color: #9dbfea; }
+      #scoreboard .scoreboard-team.t { color: #e5b79c; }
+      #scoreboard table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+      #scoreboard th, #scoreboard td { padding: 5px 8px; text-align: right; border-bottom: 1px solid rgba(222, 209, 154, 0.12); }
+      #scoreboard th:first-child, #scoreboard td:first-child { width: 55%; text-align: left; }
+      #scoreboard th { color: #c9c19c; font-size: 12px; font-weight: 400; }
+      #scoreboard tr.out { opacity: 0.55; }
+      #scoreboard tr.local { color: #fff2bd; font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="crosshair">
+      <span class="top"></span><span class="bottom"></span><span class="left"></span><span class="right"></span>
+    </div>
+    <div id="hitmarker"></div>
+    <div id="flashbang"></div>
+    <!-- 功能：C4 终局闪光覆盖层。时间：2026-09-30；作者：lq。 -->
+    <div id="bombflash"></div>
+    <div id="scope"></div>
+    <div id="status"></div>
+    <div id="radar"></div>
+    <div id="roundbar"></div>
+    <div id="feed"></div>
+    <div id="radio-caption"></div>
+    <div id="buymenu"></div>
+    <div id="centre"></div>
+    <div id="scoreboard"></div>
+    <div id="hud"></div>
+    <div id="overlay">
+      <div id="panel">
+        <h1>Counter-Strike <span>1.5 Web</span></h1>
+        <p>GoldSrc 移动数学 + 原版 <code>.bsp</code>/WAD 地图 + 原版枪声。左键开火试试 AK 的弹道。</p>
+        <p>
+          <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 移动 ·
+          <kbd>Space</kbd> 跳（可连跳）· <kbd>Ctrl</kbd> 蹲 · <kbd>Shift</kbd> 走路 ·
+          <kbd>鼠标</kbd> 视角
+        </p>
+        <p>
+          <kbd>左键</kbd> 开火 · <kbd>右键</kbd> 开镜/刀捅 · <kbd>R</kbd> 换弹 ·
+          <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 主枪/手枪/刀 · <kbd>4</kbd><kbd>5</kbd><kbd>6</kbd> 三种手雷 · <kbd>B</kbd> 购买
+          · <kbd>Tab</kbd> 战绩
+        </p>
+        <!-- 功能：说明经典 G 丢枪和 E 拾取阵亡枪械的操作。时间：2026-09-29；作者：lq。 -->
+        <p><kbd>Q</kbd> 上一件武器 · <kbd>鼠标滚轮</kbd> 循环切换 · <kbd>G</kbd> 丢枪 · <kbd>E</kbd> 拾枪 · <kbd>M</kbd> 选队</p>
+        <div id="team-select"><button id="team-ct" type="button">反恐精英 CT</button><button id="team-t" type="button">恐怖分子 T</button></div>
+        <p><kbd>K</kbd> 回出生点 · <kbd>F</kbd> 切换穿墙飞行（调试） · <kbd>Esc</kbd> 释放鼠标</p>
+        <div id="nomap"></div>
+        <button id="startBtn">点击进入游戏</button>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
