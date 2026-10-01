@@ -1,486 +1,627 @@
-<!doctype html>
-<html lang="zh-CN">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>CS 1.5 Web — 浏览器版 CS 1.5</title>
-    <style>
-      :root {
-        color-scheme: dark;
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Counter-Strike 1.5 Web - 经典射击游戏</title>
+<!-- Font Awesome Icons -->
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet"/>
+<!-- Tailwind CSS v3 with Plugins -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Tailwind Custom Config -->
+<script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            cs: {
+              gold: '#eab308',
+              'gold-light': '#fef08a',
+              'gold-dark': '#a16207',
+              accent: '#facc15',
+              dark: '#0c0e12',
+              card: 'rgba(16, 20, 26, 0.78)',
+              'card-hover': 'rgba(28, 35, 46, 0.88)',
+              border: 'rgba(255, 255, 255, 0.12)',
+              'border-gold': 'rgba(234, 179, 8, 0.85)'
+            }
+          },
+          fontFamily: {
+            tactical: ['Impact', 'Arial Black', 'sans-serif'],
+            cs: ['-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', '"PingFang SC"', '"Microsoft YaHei"', 'sans-serif']
+          }
+        }
       }
-      * {
-        box-sizing: border-box;
-      }
-      html,
-      body {
-        margin: 0;
-        height: 100%;
-        overflow: hidden;
-        background: #0b0d10;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-        color: #d7e0ea;
-      }
-      #app {
-        position: fixed;
-        inset: 0;
-      }
-      canvas {
-        display: block;
-        width: 100%;
-        height: 100%;
-      }
-      #hud {
-        position: fixed;
-        left: 12px;
-        top: 12px;
-        padding: 10px 12px;
-        border: 1px solid #2b3a4a;
-        border-radius: 6px;
-        background: rgba(8, 12, 18, 0.72);
-        font-size: 12px;
-        line-height: 1.55;
-        white-space: pre;
-        pointer-events: none;
-        z-index: 10;
-      }
-      #hud b {
-        color: #ffd479;
-        font-weight: 600;
-      }
-      #crosshair {
-        position: fixed;
-        left: 50%;
-        top: 50%;
-        width: 22px;
-        height: 22px;
-        margin: -11px 0 0 -11px;
-        pointer-events: none;
-        z-index: 10;
-        opacity: 0;
-        transition: opacity 0.15s;
-      }
-      #crosshair.on {
-        opacity: 1;
-      }
-      /* Dynamic crosshair: the four ticks sit at --gap from the centre. */
-      #crosshair {
-        width: 2px;
-        height: 2px;
-        margin: -1px 0 0 -1px;
-      }
-      #crosshair span {
-        position: absolute;
-        background: #4dff88;
-        box-shadow: 0 0 1px #000;
-      }
-      #crosshair span.top,
-      #crosshair span.bottom {
-        left: -1px;
-        width: 2px;
-        height: 9px;
-      }
-      #crosshair span.top {
-        bottom: var(--gap, 6px);
-      }
-      #crosshair span.bottom {
-        top: var(--gap, 6px);
-      }
-      #crosshair span.left,
-      #crosshair span.right {
-        top: -1px;
-        height: 2px;
-        width: 9px;
-      }
-      #crosshair span.left {
-        right: var(--gap, 6px);
-      }
-      #crosshair span.right {
-        left: var(--gap, 6px);
-      }
-      #crosshair.scoped {
-        display: none;
-      }
-      #scope {
-        position: fixed;
-        inset: 0;
-        z-index: 9;
-        pointer-events: none;
-        display: none;
-        background:
-          linear-gradient(to right, transparent calc(50% - 1px), #000 calc(50% - 1px), #000 calc(50% + 1px), transparent calc(50% + 1px)),
-          linear-gradient(to bottom, transparent calc(50% - 1px), #000 calc(50% - 1px), #000 calc(50% + 1px), transparent calc(50% + 1px));
-      }
-      #scope.on {
-        display: block;
-      }
-      #scope::before {
-        content: '';
-        position: absolute;
-        inset: 0;
-        background: radial-gradient(circle at 50% 50%, rgba(0, 0, 0, 0) 27%, rgba(0, 0, 0, 0.55) 29%, #000 33%);
-      }
-      #status {
-        position: fixed;
-        right: 16px;
-        bottom: 14px;
-        z-index: 10;
-        pointer-events: none;
-        text-align: right;
-        text-shadow: 0 1px 2px #000;
-      }
-      #status .wpn {
-        display: block;
-        font-size: 13px;
-        color: #cfd8e4;
-        letter-spacing: 0.5px;
-      }
-      #status .ammo {
-        display: block;
-        font-size: 30px;
-        font-weight: 700;
-        color: #ffd479;
-        line-height: 1.1;
-      }
-      #status .hint {
-        display: block;
-        font-size: 12px;
-        color: #ff9d6b;
-      }
-      #status .vitals {
-        display: block;
-        margin-top: 6px;
-        font-size: 13px;
-        color: #9fb0c0;
-      }
-      #status .vitals b {
-        color: #7fe3a1;
-        font-size: 17px;
-      }
-      #status .money {
-        display: block;
-        margin-top: 2px;
-        font-size: 14px;
-        color: #b6e28a;
-      }
-      #roundbar {
-        position: fixed;
-        top: 12px;
-        left: 50%;
-        transform: translateX(-50%);
-        z-index: 10;
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        padding: 6px 14px;
-        border: 1px solid #2b3a4a;
-        border-radius: 6px;
-        background: rgba(8, 12, 18, 0.72);
-        font-size: 15px;
-        pointer-events: none;
-      }
-      #roundbar .score {
-        font-weight: 700;
-      }
-      #roundbar .score.ct {
-        color: #7fb2ff;
-      }
-      #roundbar .score.t {
-        color: #ff9d6b;
-      }
-      #roundbar .alive {
-        color: #9fb0c0;
-        font-size: 13px;
-      }
-      #roundbar .clock {
-        font-size: 20px;
-        font-weight: 700;
-        color: #ffd479;
-        min-width: 74px;
-        text-align: center;
-      }
-      #roundbar .clock.armed {
-        color: #ff5a5a;
-      }
-      #roundbar .clock.defused {
-        color: #7fe3a1;
-      }
-      #roundbar .bomb {
-        font-size: 12px;
-        color: #ffb69c;
-      }
-      #feed {
-        position: fixed;
-        top: 58px;
-        right: 16px;
-        z-index: 10;
-        text-align: right;
-        font-size: 12px;
-        pointer-events: none;
-        text-shadow: 0 1px 2px #000;
-      }
-      #feed .entry {
-        margin-bottom: 3px;
-        color: #cfd8e4;
-      }
-      #feed .entry .w {
-        margin: 0 6px;
-        color: #8b98a6;
-      }
-      #feed .entry b.me {
-        color: #ffd479;
-      }
-      #buymenu {
-        position: fixed;
-        left: 50%;
-        top: 50%;
-        transform: translate(-50%, -50%);
-        z-index: 12;
-        display: none;
-        min-width: 320px;
-        padding: 16px 20px;
-        border: 1px solid #2b3a4a;
-        border-radius: 8px;
-        background: rgba(8, 12, 18, 0.92);
-        font-size: 14px;
-      }
-      #buymenu.on {
-        display: block;
-      }
-      #buymenu h3 {
-        margin: 0 0 10px;
-        font-size: 15px;
-        color: #ffd479;
-      }
-      #buymenu h3 small {
-        color: #8b98a6;
-        font-weight: 400;
-      }
-      #buymenu .row {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 4px 0;
-        color: #cfd8e4;
-      }
-      #buymenu .row em {
-        margin-left: auto;
-        font-style: normal;
-        color: #b6e28a;
-      }
-      #buymenu .row.poor {
-        color: #6b7684;
-      }
-      #buymenu .row.poor em {
-        color: #6b7684;
-      }
-      #buymenu kbd {
-        display: inline-block;
-        min-width: 18px;
-        padding: 1px 5px;
-        border: 1px solid #3d5068;
-        border-radius: 4px;
-        background: #16202b;
-        font-size: 12px;
-        text-align: center;
-      }
-      #centre {
-        position: fixed;
-        left: 50%;
-        top: 42%;
-        transform: translate(-50%, -50%);
-        z-index: 11;
-        display: none;
-        font-size: 26px;
-        font-weight: 700;
-        color: #ffd479;
-        text-shadow: 0 2px 6px #000;
-        pointer-events: none;
-        text-align: center;
-      }
-      #centre.on {
-        display: block;
-      }
-      #overlay {
-        position: fixed;
-        inset: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: radial-gradient(circle at 50% 40%, rgba(20, 28, 38, 0.92), rgba(4, 6, 9, 0.97));
-        z-index: 20;
-      }
-      #overlay.hidden {
-        display: none;
-      }
-      #panel {
-        max-width: 620px;
-        padding: 26px 30px;
-        border: 1px solid #2b3a4a;
-        border-radius: 10px;
-        background: rgba(10, 14, 20, 0.9);
-        line-height: 1.7;
-        font-size: 13px;
-      }
-      #panel h1 {
-        margin: 0 0 6px;
-        font-size: 20px;
-        letter-spacing: 0.5px;
-      }
-      #panel h1 span {
-        color: #ffd479;
-      }
-      #panel p {
-        margin: 8px 0;
-        color: #9fb0c0;
-      }
-      #panel kbd {
-        display: inline-block;
-        min-width: 20px;
-        padding: 1px 6px;
-        margin: 0 2px;
-        border: 1px solid #3d5068;
-        border-bottom-width: 2px;
-        border-radius: 4px;
-        background: #16202b;
-        color: #e6eef7;
-        font-size: 12px;
-        text-align: center;
-      }
-      #panel button {
-        margin-top: 14px;
-        padding: 10px 20px;
-        border: 0;
-        border-radius: 6px;
-        background: #ffd479;
-        color: #171c22;
-        font: inherit;
-        font-weight: 700;
-        cursor: pointer;
-      }
-      #panel button:hover {
-        background: #ffe0a0;
-      }
-      /* 功能：按原版选队流程提供 CT/T 按钮，M 键重新打开选择面板。时间：2026-09-29；作者：lq。 */
-      #team-select { display: flex; gap: 10px; margin: 12px 0; }
-      #team-select button { flex: 1; margin-top: 0; background: #3a4034; color: #e7d8aa; border: 1px solid #77745a; }
-      #team-select button.selected { border-color: #f1d184; background: #725f37; color: #fff3cb; }
-      #nomap {
-        margin-top: 12px;
-        padding: 10px 12px;
-        border-left: 3px solid #ff8f6b;
-        background: rgba(255, 143, 107, 0.08);
-        color: #ffb69c;
-        font-size: 12px;
-        line-height: 1.6;
-      }
-      #nomap code {
-        color: #ffd479;
-      }
-      /* 功能：让战斗 HUD 接近 CS 1.5 的琥珀色角落数字，调试层按需显示。时间：2026-09-29；作者：lq。 */
-      #hud { display: none; }
-      #status { inset: auto 0 12px 0; height: 58px; right: 0; text-shadow: 1px 2px #17120a; color: #efc466; }
-      #status .vitals { position: absolute; left: 24px; bottom: 0; display: flex; gap: 28px; color: #e6c46f; font-size: 23px; }
-      #status .vitals b { color: #f1d184; font-size: 26px; }
-      #status .money { position: absolute; left: 24px; bottom: 44px; color: #e6c46f; font-size: 17px; }
-      #status .ammo { position: absolute; right: 24px; bottom: 0; display: block; font-size: 31px; color: #f1d184; }
-      #status .ammo small { display: block; font-size: 12px; color: #e1c37a; }
-      #status .kd { position: absolute; right: 24px; bottom: 43px; font-size: 12px; color: #e1c37a; }
-      #roundbar { background: transparent; border: 0; font-size: 13px; text-shadow: 1px 2px #17120a; }
-      #roundbar .clock { color: #e6c46f; }
-      #buymenu { left: 28px; top: 120px; transform: none; min-width: 260px; border: 1px solid #a68b4a; border-radius: 0; background: rgba(12, 12, 9, 0.86); color: #e7c77d; }
-      #buymenu h3, #buymenu .row em { color: #e7c77d; }
-      #buymenu .row { color: #e7c77d; }
-      #buymenu p { margin-bottom: 0; font-size: 12px; color: #b9a26e; }
-      #buymenu kbd { border: 1px solid #a68b4a; border-radius: 0; background: rgba(90, 70, 29, 0.35); color: #f1d184; }
-      /* 功能：命中敌人时在准星中心闪烁短暂的白色 X 反馈。时间：2026-09-29；作者：lq。 */
-      #hitmarker { position: fixed; left: 50%; top: 50%; width: 20px; height: 20px; transform: translate(-50%, -50%); z-index: 11; pointer-events: none; opacity: 0; }
-      #hitmarker.on { opacity: 1; }
-      #hitmarker::before, #hitmarker::after { content: ''; position: absolute; left: 9px; top: 0; width: 2px; height: 20px; background: #fff; box-shadow: 0 0 2px #000; }
-      #hitmarker::before { transform: rotate(45deg); }
-      #hitmarker::after { transform: rotate(-45deg); }
-      /* 功能：以圆形雷达显示队友与敌方方位，不占用战斗画面中央。时间：2026-09-30；作者：lq。 */
-      #radar { position: fixed; left: 18px; top: 18px; width: 118px; height: 118px; z-index: 10; border: 2px solid rgba(210, 190, 112, 0.72); border-radius: 50%; background: rgba(18, 26, 17, 0.4); overflow: hidden; pointer-events: none; }
-      #radar::before, #radar::after { content: ''; position: absolute; background: rgba(210, 190, 112, 0.22); }
-      #radar::before { left: 50%; top: 0; width: 1px; height: 100%; }
-      #radar::after { top: 50%; left: 0; height: 1px; width: 100%; }
-      #radar .self, #radar .ally, #radar .enemy { position: absolute; width: 6px; height: 6px; transform: translate(-50%, -50%); border-radius: 50%; box-shadow: 0 0 5px #050; }
-      #radar .ally { background: #bde68a; }
-      #radar .enemy { background: #f06b5f; box-shadow: 0 0 5px #500; }
-      #radar .self { left: 50%; top: 50%; background: #fff1a5; }
-      /* 功能：闪光弹爆炸时短暂覆盖白屏，并随时间淡出。时间：2026-09-29；作者：lq。 */
-      #flashbang { position: fixed; inset: 0; z-index: 13; background: #fff; opacity: 0; pointer-events: none; }
-      /* 功能：C4 引爆时叠加短促暖白闪光，远处玩家仍能感知终局爆炸。时间：2026-09-30；作者：lq。 */
-      #bombflash { position: fixed; inset: 0; z-index: 13; background: #ffe5b4; opacity: 0; pointer-events: none; }
-      /* 功能：将常驻界面收敛为原版 CS 1.5 的角落 HUD，战绩仅按 Tab 显示。时间：2026-09-30；作者：lq。 */
-      #status { left: 0; right: 0; bottom: 10px; height: 72px; font-family: Tahoma, Arial, sans-serif; }
-      #status .vitals { left: 24px; bottom: 0; gap: 22px; font-size: 24px; }
-      #status .vitals b { font-size: 27px; font-weight: 600; }
-      #status .money { left: 24px; bottom: 47px; font-size: 18px; }
-      #status .ammo { right: 25px; bottom: 0; font-size: 34px; line-height: 1; }
-      #status .ammo small { display: inline; margin-left: 4px; font-size: 21px; }
-      #roundbar { top: 11px; padding: 0; gap: 14px; font-family: Tahoma, Arial, sans-serif; }
-      #roundbar .clock { font-size: 24px; min-width: 68px; }
-      #roundbar .score { font-size: 14px; }
-      #centre.spectating { top: auto; bottom: 80px; font-size: 16px; }
-      /* 功能：C4 操作与安装进度采用紧凑黑底提示，便于对战时辨认。时间：2026-09-30；作者：lq。 */
-      #centre.objective { top: auto; bottom: 112px; padding: 7px 11px; background: rgba(8, 8, 6, 0.72); border: 1px solid rgba(230, 196, 111, 0.58); font-size: 15px; }
-      #radio-caption { position: fixed; left: 26px; bottom: 100px; z-index: 10; display: none; color: #e6c878; font: 15px Tahoma, Arial, sans-serif; text-shadow: 1px 2px #17120a; pointer-events: none; }
-      #radio-caption.on { display: block; }
-      #scoreboard { position: fixed; inset: 50% auto auto 50%; transform: translate(-50%, -50%); width: min(660px, 90vw); z-index: 15; display: none; padding: 14px 22px 22px; color: #eed99a; background: rgba(27, 31, 20, 0.88); border: 1px solid rgba(190, 180, 119, 0.6); font: 15px Tahoma, Arial, sans-serif; box-shadow: 0 10px 30px #0008; pointer-events: none; }
-      #scoreboard.on { display: block; }
-      #scoreboard .scoreboard-head { text-align: center; color: #f5e8bb; font-size: 18px; padding: 4px 0 14px; }
-      #scoreboard .scoreboard-team { display: flex; justify-content: space-between; padding: 5px 8px; margin-top: 8px; font-weight: 700; background: rgba(0, 0, 0, 0.32); }
-      #scoreboard .scoreboard-team.ct { color: #9dbfea; }
-      #scoreboard .scoreboard-team.t { color: #e5b79c; }
-      #scoreboard table { border-collapse: collapse; width: 100%; table-layout: fixed; }
-      #scoreboard th, #scoreboard td { padding: 5px 8px; text-align: right; border-bottom: 1px solid rgba(222, 209, 154, 0.12); }
-      #scoreboard th:first-child, #scoreboard td:first-child { width: 55%; text-align: left; }
-      #scoreboard th { color: #c9c19c; font-size: 12px; font-weight: 400; }
-      #scoreboard tr.out { opacity: 0.55; }
-      #scoreboard tr.local { color: #fff2bd; font-weight: 700; }
-    </style>
-  </head>
-  <body>
-    <div id="app"></div>
-    <div id="crosshair">
-      <span class="top"></span><span class="bottom"></span><span class="left"></span><span class="right"></span>
-    </div>
-    <div id="hitmarker"></div>
-    <div id="flashbang"></div>
-    <!-- 功能：C4 终局闪光覆盖层。时间：2026-09-30；作者：lq。 -->
-    <div id="bombflash"></div>
-    <div id="scope"></div>
-    <div id="status"></div>
-    <div id="radar"></div>
-    <div id="roundbar"></div>
-    <div id="feed"></div>
-    <div id="radio-caption"></div>
-    <div id="buymenu"></div>
-    <div id="centre"></div>
-    <div id="scoreboard"></div>
-    <div id="hud"></div>
-    <div id="overlay">
-      <div id="panel">
-        <h1>Counter-Strike <span>1.5 Web</span></h1>
-        <p>GoldSrc 移动数学 + 原版 <code>.bsp</code>/WAD 地图 + 原版枪声。左键开火试试 AK 的弹道。</p>
-        <p>
-          <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 移动 ·
-          <kbd>Space</kbd> 跳（可连跳）· <kbd>Ctrl</kbd> 蹲 · <kbd>Shift</kbd> 走路 ·
-          <kbd>鼠标</kbd> 视角
-        </p>
-        <p>
-          <kbd>左键</kbd> 开火 · <kbd>右键</kbd> 开镜/刀捅 · <kbd>R</kbd> 换弹 ·
-          <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 主枪/手枪/刀 · <kbd>4</kbd><kbd>5</kbd><kbd>6</kbd> 三种手雷 · <kbd>B</kbd> 购买
-          · <kbd>Tab</kbd> 战绩
-        </p>
-        <!-- 功能：说明经典 G 丢枪和 E 拾取阵亡枪械的操作。时间：2026-09-29；作者：lq。 -->
-        <p><kbd>Q</kbd> 上一件武器 · <kbd>鼠标滚轮</kbd> 循环切换 · <kbd>G</kbd> 丢枪 · <kbd>E</kbd> 拾枪 · <kbd>M</kbd> 选队</p>
-        <div id="team-select"><button id="team-ct" type="button">反恐精英 CT</button><button id="team-t" type="button">恐怖分子 T</button></div>
-        <p><kbd>K</kbd> 回出生点 · <kbd>F</kbd> 切换穿墙飞行（调试） · <kbd>Esc</kbd> 释放鼠标</p>
-        <div id="nomap"></div>
-        <button id="startBtn">点击进入游戏</button>
+    }
+  </script>
+<!-- BEGIN: Custom CSS Styling -->
+<style data-purpose="base-effects">
+    /* Global scrollbar and font smoothing */
+    body {
+      margin: 0;
+      padding: 0;
+      overflow-x: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      user-select: none;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Textured background layer with original screenshot fallback */
+    .bg-cs-scene {
+      background-image: 
+        radial-gradient(circle at 50% 45%, rgba(0, 0, 0, 0.1) 0%, rgba(5, 7, 10, 0.6) 80%, rgba(2, 3, 5, 0.92) 100%),
+        url('/ui/menu-selected-bg.png');
+      background-size: cover;
+      background-position: center center;
+      background-repeat: no-repeat;
+      position: relative;
+      isolation: isolate;
+    }
+    .bg-cs-scene > * { position: relative; z-index: 1; }
+
+    /* Subtle tactical scanline overlay */
+    .scanlines {
+      background: linear-gradient(
+        to bottom,
+        rgba(255,255,255,0),
+        rgba(255,255,255,0) 50%,
+        rgba(0, 0, 0, 0.18) 50%,
+        rgba(0, 0, 0, 0.18)
+      );
+      background-size: 100% 4px;
+    }
+
+    /* Metallic and embossed logo text */
+    .cs-title-shadow {
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9), 0 0 10px rgba(0,0,0,0.7);
+    }
+    
+    .gold-glow {
+      box-shadow: 0 0 16px rgba(234, 179, 8, 0.45), inset 0 0 8px rgba(250, 204, 21, 0.25);
+    }
+
+    .gold-glow-subtle {
+      box-shadow: 0 0 8px rgba(234, 179, 8, 0.3);
+    }
+
+    /* Smooth transition presets */
+    .tactical-transition {
+      transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+  </style>
+<style data-purpose="component-styling">
+    /* Active navigation indicator line */
+    .nav-active-bar {
+      position: relative;
+    }
+    .nav-active-bar::after {
+      content: '';
+      position: absolute;
+      bottom: -10px;
+      left: 10%;
+      width: 80%;
+      height: 3px;
+      background-color: #facc15;
+      box-shadow: 0 0 8px #facc15;
+      border-radius: 2px;
+    }
+
+    /* Tactical cut-corner card effect */
+    .tactical-card {
+      position: relative;
+      background: linear-gradient(135deg, rgba(20, 26, 35, 0.85) 0%, rgba(12, 16, 22, 0.92) 100%);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+
+    .active-gold-card {
+      background: linear-gradient(90deg, rgba(234, 179, 8, 0.22) 0%, rgba(20, 26, 35, 0.85) 55%);
+      border: 1.5px solid #facc15;
+      box-shadow: 0 0 14px rgba(250, 204, 21, 0.45);
+    }
+  </style>
+<!-- END: Custom CSS Styling -->
+
+<style>
+  /* 功能：将粘贴的 HTML 入口接入现有 Three.js 对局画布与 HUD。时间：2026-10-01；作者：lq。 */
+  #app { position: fixed; inset: 0; z-index: 0; }
+  #overlay { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; }
+  #overlay.hidden { display: none; }
+  #panel { position: relative; width: 100%; height: 100%; }
+  #crosshair, #hitmarker, #flashbang, #bombflash, #scope, #status, #roundbar, #feed, #radio-caption, #buymenu, #centre, #radar, #scoreboard, #hud, #team-select, #nomap { pointer-events: none; }
+  #nomap[hidden], #team-select[hidden] { display: none !important; }
+  /* 功能：恢复 FPS 对局准星，在鼠标锁定后显示于画面中心。时间：2026-10-01；作者：lq。 */
+  #crosshair { position: fixed; left: 50%; top: 50%; width: 2px; height: 2px; margin: -1px 0 0 -1px; z-index: 40; opacity: 0; transition: opacity .15s; }
+  #crosshair.on { opacity: 1; }
+  #crosshair span { position: absolute; display: block; background: #4dff88; box-shadow: 0 0 2px #000; }
+  #crosshair span.top, #crosshair span.bottom { left: -1px; width: 2px; height: 9px; }
+  #crosshair span.top { bottom: var(--gap, 6px); }
+  #crosshair span.bottom { top: var(--gap, 6px); }
+  #crosshair span.left, #crosshair span.right { top: -1px; width: 9px; height: 2px; }
+  #crosshair span.left { right: var(--gap, 6px); }
+  #crosshair span.right { left: var(--gap, 6px); }
+  #crosshair.scoped { display: none; }
+  /* 功能：恢复生命、护甲、弹药、回合、击杀提示、雷达和购买菜单等战斗 HUD。时间：2026-10-01；作者：lq。 */
+  #status { position: fixed; left: 0; right: 0; bottom: 10px; height: 74px; z-index: 30; color: #e6c46f; font: 15px Tahoma, Arial, sans-serif; text-shadow: 1px 2px #17120a; pointer-events: none; }
+  #status .vitals { position: absolute; left: 24px; bottom: 0; display: flex; gap: 22px; font-size: 24px; }
+  #status .vitals b { color: #f1d184; font-size: 27px; font-weight: 600; }
+  #status .money { position: absolute; left: 24px; bottom: 47px; font-size: 18px; }
+  #status .ammo { position: absolute; right: 25px; bottom: 0; font-size: 34px; line-height: 1; }
+  #status .ammo small { display: inline; margin-left: 4px; font-size: 21px; }
+  #roundbar { position: fixed; top: 11px; left: 50%; transform: translateX(-50%); z-index: 30; display: flex; align-items: center; gap: 14px; color: #e6c46f; font: 14px Tahoma, Arial, sans-serif; text-shadow: 1px 2px #17120a; pointer-events: none; }
+  #roundbar .score { font-size: 14px; font-weight: 700; }
+  #roundbar .score.ct { color: #9dbfea; }
+  #roundbar .score.t { color: #e5b79c; }
+  #roundbar .clock { min-width: 68px; color: #e6c46f; font-size: 24px; font-weight: 700; text-align: center; }
+  #roundbar .clock.armed { color: #ff6464; }
+  #feed { position: fixed; top: 58px; right: 16px; z-index: 30; color: #d4d9dc; font: 12px Tahoma, Arial, sans-serif; text-align: right; text-shadow: 0 1px 2px #000; }
+  #feed .entry { margin-bottom: 3px; }
+  #feed .entry .w { margin: 0 6px; color: #8b98a6; }
+  #feed .entry b.me { color: #ffd479; }
+  #radar { position: fixed; left: 18px; top: 18px; width: 118px; height: 118px; z-index: 30; border: 2px solid rgba(210,190,112,.72); border-radius: 50%; background: rgba(18,26,17,.4); overflow: hidden; pointer-events: none; }
+  #radar::before, #radar::after { content: ''; position: absolute; background: rgba(210,190,112,.22); }
+  #radar::before { left: 50%; top: 0; width: 1px; height: 100%; }
+  #radar::after { top: 50%; left: 0; width: 100%; height: 1px; }
+  #radar .self, #radar .ally, #radar .enemy { position: absolute; width: 6px; height: 6px; transform: translate(-50%, -50%); border-radius: 50%; }
+  #radar .self { left: 50%; top: 50%; background: #fff1a5; }
+  #radar .ally { background: #bde68a; box-shadow: 0 0 5px #050; }
+  #radar .enemy { background: #f06b5f; box-shadow: 0 0 5px #500; }
+  #centre { position: fixed; left: 50%; top: 42%; transform: translate(-50%, -50%); z-index: 31; display: none; color: #ffd479; font: 700 26px Tahoma, Arial, sans-serif; text-align: center; text-shadow: 0 2px 6px #000; pointer-events: none; }
+  #centre.on { display: block; }
+  #centre.spectating { top: auto; bottom: 80px; font-size: 16px; }
+  #centre.objective { top: auto; bottom: 112px; padding: 7px 11px; border: 1px solid rgba(230,196,111,.58); background: rgba(8,8,6,.72); font-size: 15px; }
+  #radio-caption { position: fixed; left: 26px; bottom: 100px; z-index: 30; display: none; color: #e6c878; font: 15px Tahoma, Arial, sans-serif; text-shadow: 1px 2px #17120a; }
+  #radio-caption.on { display: block; }
+  #buymenu { position: fixed; left: 28px; top: 120px; z-index: 32; display: none; min-width: 260px; padding: 16px 20px; border: 1px solid #a68b4a; background: rgba(12,12,9,.9); color: #e7c77d; font: 14px Tahoma, Arial, sans-serif; }
+  #buymenu.on { display: block; }
+  #buymenu h3 { margin: 0 0 10px; color: #e7c77d; font-size: 15px; }
+  #buymenu .row { display: flex; gap: 10px; padding: 4px 0; }
+  #buymenu .row em { margin-left: auto; color: #e7c77d; font-style: normal; }
+  #buymenu kbd { min-width: 18px; padding: 1px 5px; border: 1px solid #a68b4a; background: rgba(90,70,29,.35); color: #f1d184; text-align: center; }
+  #scoreboard { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(660px, 90vw); z-index: 35; display: none; padding: 14px 22px 22px; border: 1px solid rgba(190,180,119,.6); background: rgba(27,31,20,.9); color: #eed99a; font: 15px Tahoma, Arial, sans-serif; box-shadow: 0 10px 30px #0008; }
+  #scoreboard.on { display: block; }
+  #scoreboard .scoreboard-head { padding: 4px 0 14px; color: #f5e8bb; font-size: 18px; text-align: center; }
+  #scoreboard .scoreboard-team { display: flex; justify-content: space-between; padding: 5px 8px; margin-top: 8px; font-weight: 700; background: rgba(0,0,0,.32); }
+  #scoreboard table { width: 100%; border-collapse: collapse; }
+  #scoreboard th, #scoreboard td { padding: 5px 8px; border-bottom: 1px solid rgba(222,209,154,.12); text-align: right; }
+  #scoreboard th:first-child, #scoreboard td:first-child { width: 55%; text-align: left; }
+  #hitmarker { position: fixed; left: 50%; top: 50%; width: 20px; height: 20px; transform: translate(-50%, -50%); z-index: 41; opacity: 0; pointer-events: none; }
+  #hitmarker.on { opacity: 1; }
+  #hitmarker::before, #hitmarker::after { content: ''; position: absolute; left: 9px; top: 0; width: 2px; height: 20px; background: #fff; box-shadow: 0 0 2px #000; }
+  #hitmarker::before { transform: rotate(45deg); }
+  #hitmarker::after { transform: rotate(-45deg); }
+  #scope { position: fixed; inset: 0; z-index: 39; display: none; pointer-events: none; background: linear-gradient(to right, transparent calc(50% - 1px), #000 calc(50% - 1px), #000 calc(50% + 1px), transparent calc(50% + 1px)), linear-gradient(to bottom, transparent calc(50% - 1px), #000 calc(50% - 1px), #000 calc(50% + 1px), transparent calc(50% + 1px)); }
+  #scope.on { display: block; }
+  #scope::before { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at 50% 50%, transparent 27%, rgba(0,0,0,.55) 29%, #000 33%); }
+  #flashbang, #bombflash { position: fixed; inset: 0; z-index: 42; opacity: 0; pointer-events: none; }
+  #flashbang { background: #fff; }
+  #bombflash { background: #ffe5b4; }
+
+  /* 功能：主菜单弹窗的深色战术面板与表单样式。时间：2026-10-01；作者：lq。 */
+  .menu-modal[hidden] { display: none !important; }
+  .menu-modal { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; color: #e5e7eb; font-family: inherit; }
+  .menu-modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.68); backdrop-filter: blur(5px); }
+  .menu-modal-card { position: relative; width: min(640px, calc(100vw - 32px)); max-height: min(720px, calc(100vh - 48px)); overflow: auto; padding: 26px 30px 30px; border: 1px solid rgba(234,179,8,.55); border-radius: 8px; background: linear-gradient(145deg, rgba(20,27,35,.98), rgba(7,11,16,.98)); box-shadow: 0 22px 70px rgba(0,0,0,.65), inset 0 0 28px rgba(234,179,8,.05); }
+  .menu-modal-card h2 { margin: 0 0 18px; color: #facc15; font-size: 22px; letter-spacing: .08em; }
+  .menu-modal-close { position: absolute; top: 10px; right: 14px; border: 0; background: transparent; color: #aeb6bd; font-size: 28px; cursor: pointer; }
+  .menu-modal-close:hover { color: #facc15; }
+  .menu-modal-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 24px; }
+  .menu-modal-grid section { padding: 12px 14px; border: 1px solid rgba(255,255,255,.13); border-radius: 5px; background: rgba(0,0,0,.22); }
+  .menu-modal-grid h3 { margin: 0 0 8px; color: #f3d46b; font-size: 14px; }
+  .menu-modal-grid p, .menu-modal-grid li { margin: 4px 0; color: #c0c8ce; font-size: 13px; line-height: 1.55; }
+  .menu-modal-grid ul { margin: 0; padding-left: 18px; }
+  .lan-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .lan-table th, .lan-table td { padding: 9px 8px; border-bottom: 1px solid rgba(255,255,255,.12); text-align: left; }
+  .lan-table th { color: #facc15; font-weight: 600; }
+  .lan-table td { color: #cbd5db; }
+  .setting-row { display: grid; grid-template-columns: 120px 1fr; align-items: center; gap: 14px; padding: 11px 0; border-bottom: 1px solid rgba(255,255,255,.1); color: #cbd5db; font-size: 14px; }
+  .setting-row select, .setting-row input { width: 100%; accent-color: #eab308; }
+  .setting-row select { padding: 7px 9px; border: 1px solid rgba(255,255,255,.2); border-radius: 4px; background: #121a22; color: #edf0f2; }
+  .menu-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+  .menu-modal-actions button { padding: 8px 16px; border: 1px solid rgba(255,255,255,.2); border-radius: 4px; background: #202c35; color: #e5e7eb; cursor: pointer; }
+  .menu-modal-actions button.primary { border-color: #eab308; background: #80631a; color: #fff4bd; }
+  @media (max-width: 640px) { .menu-modal-grid { grid-template-columns: 1fr; } .menu-modal-card { padding: 22px 18px; } }
+</style>
+</head>
+<body class="bg-black text-gray-200 h-screen w-screen overflow-hidden flex flex-col justify-between select-none">
+<div id="app"></div>
+<div id="overlay">
+<div id="panel">
+<!-- BEGIN: Game Background Scene Layer -->
+<div class="fixed inset-0 bg-cs-scene z-0 pointer-events-none" data-purpose="scenery-background">
+<!-- Overlay vignette -->
+<div class="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-black/75"></div>
+<div class="absolute inset-0 scanlines opacity-35 pointer-events-none"></div>
+</div>
+<!-- END: Game Background Scene Layer -->
+<!-- BEGIN: Top Navigation Bar -->
+<header class="relative z-20 w-full px-8 py-3.5 flex items-center justify-between border-b border-white/10 bg-black/40 backdrop-blur-md" data-purpose="top-navigation-header">
+<!-- Left Logo Brand -->
+<div class="flex items-center cursor-pointer group" data-purpose="logo-brand">
+  <!-- 功能：使用项目当前 Logo 图片，保持品牌标识与现有入口一致。时间：2026-10-01；作者：lq。 -->
+  <img src="/ui/menu-logo.png" alt="Counter-Strike 1.5 Web" class="w-[310px] max-w-[30vw] h-auto drop-shadow-[0_0_12px_rgba(0,0,0,0.7)] transition-transform duration-200 group-hover:scale-[1.02]" />
+</div>
+<!-- Center Navigation Tabs -->
+<nav class="flex items-center space-x-9 text-sm font-medium" data-purpose="primary-navigation-menu">
+<!-- Home Tab (Active) -->
+<a class="nav-active-bar flex flex-col items-center text-cs-gold hover:text-cs-gold-light tactical-transition group" data-purpose="nav-item-home" href="#">
+<i class="fa-solid fa-house text-lg mb-1 drop-shadow-[0_0_6px_rgba(250,204,21,0.8)]"></i>
+<div class="flex flex-col items-center leading-none">
+<span class="font-bold tracking-wider text-xs">主页</span>
+<span class="text-[9px] tracking-widest text-cs-gold/80 font-mono mt-0.5">HOME</span>
+</div>
+</a>
+<!-- Play Tab -->
+<a class="flex flex-col items-center text-gray-400 hover:text-cs-gold tactical-transition group" data-purpose="nav-item-play" href="#">
+<i class="fa-solid fa-gamepad text-lg mb-1 group-hover:scale-110 tactical-transition"></i>
+<div class="flex flex-col items-center leading-none">
+<span class="font-bold tracking-wider text-xs">开始游戏</span>
+<span class="text-[9px] tracking-widest text-gray-500 group-hover:text-cs-gold/70 font-mono mt-0.5">PLAY</span>
+</div>
+</a>
+<!-- Server Browser Tab -->
+<a class="flex flex-col items-center text-gray-400 hover:text-cs-gold tactical-transition group" data-purpose="nav-item-servers" data-menu="lan" href="#">
+<i class="fa-solid fa-server text-lg mb-1 group-hover:scale-110 tactical-transition"></i>
+<div class="flex flex-col items-center leading-none">
+<span class="font-bold tracking-wider text-xs">服务器</span>
+<span class="text-[9px] tracking-widest text-gray-500 group-hover:text-cs-gold/70 font-mono mt-0.5">SERVERS</span>
+</div>
+</a>
+<!-- Settings Tab -->
+<a class="flex flex-col items-center text-gray-400 hover:text-cs-gold tactical-transition group" data-purpose="nav-item-settings" data-menu="settings" href="#">
+<i class="fa-solid fa-gear text-lg mb-1 group-hover:scale-110 tactical-transition"></i>
+<div class="flex flex-col items-center leading-none">
+<span class="font-bold tracking-wider text-xs">设置</span>
+<span class="text-[9px] tracking-widest text-gray-500 group-hover:text-cs-gold/70 font-mono mt-0.5">SETTINGS</span>
+</div>
+</a>
+<!-- Ranking Tab -->
+<a class="flex flex-col items-center text-gray-400 hover:text-cs-gold tactical-transition group" data-purpose="nav-item-ranking" href="#">
+<i class="fa-solid fa-trophy text-lg mb-1 group-hover:scale-110 tactical-transition"></i>
+<div class="flex flex-col items-center leading-none">
+<span class="font-bold tracking-wider text-xs">排行榜</span>
+<span class="text-[9px] tracking-widest text-gray-500 group-hover:text-cs-gold/70 font-mono mt-0.5">RANKING</span>
+</div>
+</a>
+<!-- Help Tab -->
+<a class="flex flex-col items-center text-gray-400 hover:text-cs-gold tactical-transition group" data-purpose="nav-item-help" data-menu="help" href="#">
+<i class="fa-solid fa-circle-question text-lg mb-1 group-hover:scale-110 tactical-transition"></i>
+<div class="flex flex-col items-center leading-none">
+<span class="font-bold tracking-wider text-xs">帮助</span>
+<span class="text-[9px] tracking-widest text-gray-500 group-hover:text-cs-gold/70 font-mono mt-0.5">HELP</span>
+</div>
+</a>
+</nav>
+<!-- Invisible placeholder for balancing logo width -->
+<div class="w-36 hidden md:block opacity-0 pointer-events-none"></div>
+</header>
+<!-- END: Top Navigation Bar -->
+<!-- BEGIN: Main Dashboard Content Body -->
+<main class="relative z-10 flex-1 px-8 py-5 flex justify-between items-start overflow-hidden" data-purpose="main-layout-container">
+<!-- BEGIN: Left Tactical Menu Panel -->
+<div class="w-[340px] flex flex-col space-y-3.5 shrink-0" data-purpose="left-action-menu">
+<!-- 1. Quick Play Button (Active Highlighted) -->
+<button class="tactical-card active-gold-card w-full h-[62px] rounded px-4 flex items-center justify-between text-left group cursor-pointer overflow-hidden transition-all duration-200 hover:brightness-110" id="startBtn" data-purpose="action-quick-play">
+<div class="flex items-center space-x-3.5 z-10">
+<span class="text-cs-gold text-2xl flex items-center justify-center w-7">
+<i class="fa-solid fa-users-rays"></i>
+</span>
+<div>
+<div class="text-white font-bold text-base tracking-wide flex items-center space-x-1.5">
+<span>快速开始</span>
+</div>
+<div class="text-[10px] text-yellow-300/80 font-mono font-bold tracking-wider uppercase">
+              Quick Play
+            </div>
+</div>
+</div>
+<!-- Right Side Preview Thumbnail & Chevron -->
+<div class="flex items-center space-x-2 z-10">
+<div class="w-16 h-10 rounded overflow-hidden border border-yellow-400/40 relative shadow-inner">
+<img alt="Preview" class="w-full h-full object-cover object-center filter contrast-125" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD3V9mVoH_JtHwAuyg7tsZ3M1epL-ESECgSqy-baCRETIDUnBKEcq_WZ8vtuTCrIEvQEu31XMJKy_048gSzawX1BQA06KRRe4GbBawCP8Wy_SA9AljVqdN80CbydoiZqn05vB7mnQ-HOYOPbDPDJiEK0xbF6dcbUdBPqz0za_yghjO4-M_Qd2F7wBT-Bflp0RuXODmHPAw1nfK4xeCYeCrpQM7YLzi6s2vPvO1LdnZ2iHsq9AKEF9uzaRZcR5-Oe8s30X0"/>
+</div>
+<i class="fa-solid fa-chevron-right text-xs text-cs-gold group-hover:translate-x-0.5 tactical-transition"></i>
+</div>
+</button>
+<!-- 2. Server Browser Button -->
+<button class="tactical-card border border-white/10 hover:border-white/30 w-full h-[62px] rounded px-4 flex items-center justify-between text-left group cursor-pointer overflow-hidden transition-all duration-200 hover:bg-white/[0.08]" data-purpose="action-server-list" data-menu="lan">
+<div class="flex items-center space-x-3.5 z-10">
+<span class="text-gray-300 group-hover:text-cs-gold text-2xl flex items-center justify-center w-7 tactical-transition">
+<i class="fa-solid fa-rectangle-list"></i>
+</span>
+<div>
+<div class="text-gray-100 group-hover:text-white font-bold text-base tracking-wide">
+              服务器列表
+            </div>
+<div class="text-[10px] text-gray-400 group-hover:text-yellow-400/80 font-mono tracking-wider uppercase tactical-transition">
+              Server Browser
+            </div>
+</div>
+</div>
+<div class="flex items-center space-x-2 z-10">
+<div class="w-16 h-10 rounded overflow-hidden border border-white/15 relative bg-black/40">
+<img alt="Dust2 preview" class="w-full h-full object-cover object-left opacity-80 group-hover:opacity-100 tactical-transition" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD63953ecI3WgW8bErPYotPe1VIGU5ZflXn75wE9t3e3sO3iqlHepK2_sq9-YARYl0hB7mR-WVXW8nghDvBkbBa4h_K4iV_5-E4YD06xFG6Z-_Y98UvMGW-K01qHwyu79lmoqug_TMFshMMG-xdoiDdM_f_lBZNBcn_qZv95hDpffc466Htt0WGcIGwukchGHB5GMFMkT8Qq7kgYMBmJprtmrnmQ1IAH_r4KrfWnre303OA6P-QgJ6G7nt6iIKuGI5EKcg"/>
+</div>
+<i class="fa-solid fa-chevron-right text-xs text-gray-400 group-hover:text-cs-gold group-hover:translate-x-0.5 tactical-transition"></i>
+</div>
+</button>
+<!-- 3. Create Server Button -->
+<button class="tactical-card border border-white/10 hover:border-white/30 w-full h-[62px] rounded px-4 flex items-center justify-between text-left group cursor-pointer overflow-hidden transition-all duration-200 hover:bg-white/[0.08]" data-purpose="action-create-room" data-menu="create">
+<div class="flex items-center space-x-3.5 z-10">
+<span class="text-gray-300 group-hover:text-cs-gold text-2xl flex items-center justify-center w-7 tactical-transition">
+<i class="fa-solid fa-house-chimney"></i>
+</span>
+<div>
+<div class="text-gray-100 group-hover:text-white font-bold text-base tracking-wide">
+              创建房间
+            </div>
+<div class="text-[10px] text-gray-400 group-hover:text-yellow-400/80 font-mono tracking-wider uppercase tactical-transition">
+              Create Server
+            </div>
+</div>
+</div>
+<div class="flex items-center space-x-2 z-10">
+<div class="w-16 h-10 rounded overflow-hidden border border-white/15 relative bg-black/40">
+<img alt="Map indoor" class="w-full h-full object-cover object-[20%_60%] opacity-75 group-hover:opacity-100 tactical-transition" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCCDX1OI0u5Bb6DKdWc6ZKT_g1UO489Hjuhjwbg9nIg51ksCAqzzABVnNCzFyuH1BtO1R87a7BNW9Z5jHcctlx2x7MHKcoite4cWIRHAQNKP392Tg0EKxkTCUWKyKgDqy-KJUt4m-ig685p4MJdu6Ivmk1QMjs_E4CADFwbGCQW_envqYTvxKcipVstzydxRdGRK8ypQMXIYG6n8y1IfPY1qybaetKEK4EghSQdN6Oc2eWje_6QKh8AtSDeJmoB575RD4I"/>
+</div>
+<i class="fa-solid fa-chevron-right text-xs text-gray-400 group-hover:text-cs-gold group-hover:translate-x-0.5 tactical-transition"></i>
+</div>
+</button>
+<!-- 4. Game Settings Button -->
+<button class="tactical-card border border-white/10 hover:border-white/30 w-full h-[62px] rounded px-4 flex items-center justify-between text-left group cursor-pointer overflow-hidden transition-all duration-200 hover:bg-white/[0.08]" data-purpose="action-settings" data-menu="settings">
+<div class="flex items-center space-x-3.5 z-10">
+<span class="text-gray-300 group-hover:text-cs-gold text-2xl flex items-center justify-center w-7 tactical-transition">
+<i class="fa-solid fa-gear"></i>
+</span>
+<div>
+<div class="text-gray-100 group-hover:text-white font-bold text-base tracking-wide">
+              游戏设置
+            </div>
+<div class="text-[10px] text-gray-400 group-hover:text-yellow-400/80 font-mono tracking-wider uppercase tactical-transition">
+              Game Settings
+            </div>
+</div>
+</div>
+<div class="flex items-center space-x-2 z-10">
+<div class="w-16 h-10 rounded overflow-hidden border border-white/15 relative bg-stone-900/60">
+<div class="w-full h-full flex items-center justify-center bg-gradient-to-tr from-gray-900 via-neutral-800 to-gray-700 opacity-80 group-hover:opacity-100">
+<i class="fa-solid fa-sliders text-xs text-gray-300"></i>
+</div>
+</div>
+<i class="fa-solid fa-chevron-right text-xs text-gray-400 group-hover:text-cs-gold group-hover:translate-x-0.5 tactical-transition"></i>
+</div>
+</button>
+<!-- 5. Exit Game Button -->
+<button class="tactical-card border border-white/10 hover:border-red-500/40 w-full h-[62px] rounded px-4 flex items-center justify-between text-left group cursor-pointer overflow-hidden transition-all duration-200 hover:bg-red-950/20" data-purpose="action-exit-game" data-menu="exit">
+<div class="flex items-center space-x-3.5 z-10">
+<span class="text-gray-300 group-hover:text-red-400 text-2xl flex items-center justify-center w-7 tactical-transition">
+<i class="fa-solid fa-arrow-right-from-bracket"></i>
+</span>
+<div>
+<div class="text-gray-100 group-hover:text-red-200 font-bold text-base tracking-wide">
+              退出游戏
+            </div>
+<div class="text-[10px] text-gray-400 group-hover:text-red-300/70 font-mono tracking-wider uppercase tactical-transition">
+              Exit Game
+            </div>
+</div>
+</div>
+<div class="flex items-center space-x-2 z-10">
+<i class="fa-solid fa-chevron-right text-xs text-gray-400 group-hover:text-red-400 group-hover:translate-x-0.5 tactical-transition mr-1"></i>
+</div>
+</button>
+</div>
+<!-- END: Left Tactical Menu Panel -->
+<!-- Center Space is preserved for CT Soldier graphic backdrop -->
+<div class="flex-1 pointer-events-none"></div>
+<!-- BEGIN: Right Panels (News & Hot Maps) -->
+<div class="w-[370px] flex flex-col space-y-4 shrink-0" data-purpose="right-information-panel">
+<!-- Card 1: Latest News / Announcements -->
+<section class="tactical-card border border-white/15 rounded-md p-4 text-xs shadow-xl" data-purpose="news-announcements-card">
+<!-- Header -->
+<div class="flex items-center justify-between border-b border-white/10 pb-2.5 mb-2.5">
+<div class="flex items-center space-x-2">
+<span class="text-white font-bold text-sm tracking-wide">最新公告</span>
+<span class="text-gray-500 font-mono text-[11px] uppercase tracking-wider">/ NEWS</span>
+</div>
+<a class="text-gray-400 hover:text-cs-gold flex items-center text-[11px] font-medium tactical-transition" href="#">
+            更多 <i class="fa-solid fa-chevron-right text-[9px] ml-1"></i>
+</a>
+</div>
+<!-- News Bullet List -->
+<ul class="space-y-2 text-gray-300" data-purpose="news-list">
+<li class="flex items-baseline space-x-2.5 hover:text-white cursor-pointer transition-colors group">
+<span class="text-gray-400 font-mono text-[11px] shrink-0">2024-06-12</span>
+<span class="truncate group-hover:underline text-[11.5px] leading-tight text-gray-200">CS1.5 Web 测试版上线，欢迎体验！</span>
+</li>
+<li class="flex items-baseline space-x-2.5 hover:text-white cursor-pointer transition-colors group">
+<span class="text-gray-400 font-mono text-[11px] shrink-0">2024-06-10</span>
+<span class="truncate group-hover:underline text-[11.5px] leading-tight text-gray-300">修复部分地图加载异常问题</span>
+</li>
+<li class="flex items-baseline space-x-2.5 hover:text-white cursor-pointer transition-colors group">
+<span class="text-gray-400 font-mono text-[11px] shrink-0">2024-06-05</span>
+<span class="truncate group-hover:underline text-[11.5px] leading-tight text-gray-300">新增 dust2、de_inferno 等经典地图</span>
+</li>
+<li class="flex items-baseline space-x-2.5 hover:text-white cursor-pointer transition-colors group">
+<span class="text-gray-400 font-mono text-[11px] shrink-0">2024-05-28</span>
+<span class="truncate group-hover:underline text-[11.5px] leading-tight text-gray-300">优化网络连接与反作弊机制</span>
+</li>
+</ul>
+</section>
+<!-- Card 2: Hot Maps Grid -->
+<section class="tactical-card border border-white/15 rounded-md p-4 text-xs shadow-xl" data-purpose="hot-maps-card">
+<!-- Header -->
+<div class="flex items-center justify-between border-b border-white/10 pb-2.5 mb-3">
+<div class="flex items-center space-x-2">
+<span class="text-white font-bold text-sm tracking-wide">热门地图</span>
+<span class="text-gray-500 font-mono text-[11px] uppercase tracking-wider">/ HOT MAPS</span>
+</div>
+<a class="text-gray-400 hover:text-cs-gold flex items-center text-[11px] font-medium tactical-transition" href="#">
+            更多 <i class="fa-solid fa-chevron-right text-[9px] ml-1"></i>
+</a>
+</div>
+<!-- 4 Maps Thumbnails Grid -->
+<div class="grid grid-cols-4 gap-2" data-purpose="maps-grid">
+<!-- Map 1: de_dust2 -->
+<div class="flex flex-col items-center group cursor-pointer" data-purpose="map-item-dust2">
+<div class="w-full aspect-[4/5] rounded overflow-hidden border border-white/15 group-hover:border-cs-gold relative tactical-transition shadow group-hover:shadow-[0_0_8px_rgba(234,179,8,0.5)]">
+<img alt="de_dust2" class="w-full h-full object-cover object-left filter saturate-125 group-hover:scale-105 tactical-transition" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBnxVzWPD7YOFCY_CGW8lUn6ai-Jb_RRqZXbeQ1dEn2leeR7rzKRmY6IsByamJN61y8gSl-TN8C_fSbKaj1Bn6zxiuhasEFtB3NKRyGwMSNgBBRRKs2MBQeDHz4AZ6bT2vF6y4asffq-egLGoXh1Hhw0dzQGNq2KXOkQgpcf732YgemXNNWFwxs-t9wLGjph0J5SOjzBg6DygtkMXovTlRu9pO7AgIP7V4RZAnslp1ioE_6dMiKaWfUVPuKPBqASz1H3zM"/>
+<div class="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-80"></div>
+</div>
+<span class="text-[10px] font-mono tracking-tight text-gray-300 group-hover:text-cs-gold mt-1.5 font-medium truncate w-full text-center tactical-transition">
+              de_dust2
+            </span>
+</div>
+<!-- Map 2: de_inferno -->
+<div class="flex flex-col items-center group cursor-pointer" data-purpose="map-item-inferno">
+<div class="w-full aspect-[4/5] rounded overflow-hidden border border-white/15 group-hover:border-cs-gold relative tactical-transition shadow group-hover:shadow-[0_0_8px_rgba(234,179,8,0.5)]">
+<img alt="de_inferno" class="w-full h-full object-cover object-[25%_center] group-hover:scale-105 tactical-transition" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC8rWrm7indkBXBXlj-f0mpF6QpPL4-ToG7Jyybnh8wqvGrsl-LuivoMgcEfDQdEzlFzJ-_rmaBhXACk5-Yitc3bGzaoCe4s8rBXluydKCn9860jBG9C6q6vMdwdm1QtM_EaWAOqjc6ZsWtm_2WN3iFaXhrY3rQYRXPa7W9F5jh4NS2T_rqX-gXaxqk8gyt8GH1lj2yKL7wzyrJCX0q_L9PxlACJ3XTvnOJig4he7MWagVQV_aU_KG7LIdgDS7Ry9WSQAU"/>
+<div class="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-80"></div>
+</div>
+<span class="text-[10px] font-mono tracking-tight text-gray-300 group-hover:text-cs-gold mt-1.5 font-medium truncate w-full text-center tactical-transition">
+              de_inferno
+            </span>
+</div>
+<!-- Map 3: cs_assault -->
+<div class="flex flex-col items-center group cursor-pointer" data-purpose="map-item-assault">
+<div class="w-full aspect-[4/5] rounded overflow-hidden border border-white/15 group-hover:border-cs-gold relative tactical-transition shadow group-hover:shadow-[0_0_8px_rgba(234,179,8,0.5)]">
+<img alt="cs_assault" class="w-full h-full object-cover object-right group-hover:scale-105 filter brightness-75 group-hover:brightness-90 tactical-transition" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCO2_MKicW94lkppbnTFFR7txSqwm3_Dxii4CocMezsVitJ5HiGJE6p5EYa0sXzBbHUWNeM4y7AHJ3HEw_rZyV53-ooc1hUZ_J1oUdBE4ijMmw9XYkBfEHUSsdyx2MZnNaQL5pRvQLIidysIZ0HULn5e6lRXkYc_068L04oZq9ehkaHJQ9y6o9WWuTBNUvn66oEIefrrFnb-EhSffQ0naptTb1hXd3PGVxqsn2u53ooD85P20IbU9AhCYBqB8f4LsFvwvk"/>
+<div class="absolute inset-0 bg-gradient-to-t from-blue-950/80 via-transparent to-transparent opacity-80"></div>
+</div>
+<span class="text-[10px] font-mono tracking-tight text-gray-300 group-hover:text-cs-gold mt-1.5 font-medium truncate w-full text-center tactical-transition">
+              cs_assault
+            </span>
+</div>
+<!-- Map 4: de_aztec -->
+<div class="flex flex-col items-center group cursor-pointer" data-purpose="map-item-aztec">
+<div class="w-full aspect-[4/5] rounded overflow-hidden border border-white/15 group-hover:border-cs-gold relative tactical-transition shadow group-hover:shadow-[0_0_8px_rgba(234,179,8,0.5)]">
+<img alt="de_aztec" class="w-full h-full object-cover object-[80%_center] group-hover:scale-105 tactical-transition" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAaj3X3F__3S2MqU6Ph-GsFpCIZWqFH32H3v_jJHonLLc4AJup3iqMNkGB3BPCQmbVZJk6eBNmjTBN-DPdAejJzQoifDrx3pOGW2IBkIU8dMwcc4bfFhujZCic9VYDC-IKwZu-Bz6GtD76xyWEJ5XF6Zut1KobOU-I47qyG2pWiyqQOVe97LTx6OcQYNjfLdG-5wREQVAxwwrZX_t5EIY3r5Ll9i7a_G1i3VNvP36tEkTI_P8Jku6Ymw5pnjBrjKz6-pcg"/>
+<div class="absolute inset-0 bg-gradient-to-t from-emerald-950/80 via-transparent to-transparent opacity-80"></div>
+</div>
+<span class="text-[10px] font-mono tracking-tight text-gray-300 group-hover:text-cs-gold mt-1.5 font-medium truncate w-full text-center tactical-transition">
+              de_aztec
+            </span>
+</div>
+</div>
+</section>
+</div>
+<!-- END: Right Panels -->
+</main>
+<!-- END: Main Dashboard Content Body -->
+<!-- BEGIN: Bottom Bar / Player Status & Nostalgic Quote -->
+<footer class="relative z-20 w-full px-8 pb-5 pt-2 flex items-end justify-between" data-purpose="footer-status-bar">
+<!-- Player Card (Bottom Left) -->
+<div class="flex items-center space-x-3.5 tactical-card bg-black/60 border border-white/15 rounded p-2.5 pr-6 backdrop-blur-md" data-purpose="player-profile-badge">
+<!-- Operator Avatar Frame -->
+<div class="w-12 h-12 rounded border-2 border-cs-gold overflow-hidden relative shadow-[0_0_10px_rgba(234,179,8,0.4)] shrink-0">
+<img alt="Operator Avatar" class="w-full h-full object-cover object-[42%_32%] scale-150" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCOSKdaE76JbHYwyRKfwPvIqjlgrgOyXwPEC9wwDTIv-wigfEr_OGwXimhfvtdEnJdH7Y4to7s9kv4QEQ-XWixmkD4F_vPOdQEf6P_QQVnMSlOFoaMFgD7Mf36jI_4IOOHvi4VoHGpu85WCdilFc3YKfW6stYPqvQ5890SAygimlb_c_5JIj1-7DYkzSqwzj5k3z7FlbRvITluu2w3aaNcfBgUjkmhTcuNn10CBy2vOkS40MQhEPCK7TsHAdx4tGRVIMAA"/>
+</div>
+<!-- Player Info & EXP Bar -->
+<div class="flex flex-col space-y-1">
+<!-- Player Nickname -->
+<span class="text-white font-extrabold text-sm tracking-wide flex items-center leading-none">
+          CT_Fan001
+        </span>
+<!-- Level and Experience Numbers -->
+<div class="flex items-center space-x-2 text-[11px] text-gray-300 font-mono">
+<span class="font-bold text-gray-200">Lv. 12</span>
+<span class="text-gray-500">|</span>
+<span class="text-gray-400">经验值 <span class="text-gray-200">3200</span> / 5000</span>
+</div>
+<!-- Progress Bar Track -->
+<div class="w-48 h-1.5 bg-gray-800 rounded-full overflow-hidden border border-white/10 mt-0.5">
+<!-- 64% gold progress fill -->
+<div class="h-full bg-gradient-to-r from-yellow-600 via-cs-gold to-yellow-300 rounded-full w-[64%] shadow-[0_0_6px_#facc15]"></div>
+</div>
+</div>
+</div>
+<!-- Nostalgic Quote (Bottom Right) -->
+<div class="tactical-card bg-black/55 border border-white/10 rounded px-5 py-2.5 backdrop-blur-sm text-right" data-purpose="nostalgic-quote">
+<div class="text-gray-100 font-medium text-sm tracking-wider cs-title-shadow">
+        “经典永不褪色”
       </div>
-    </div>
-    <script type="module" src="/src/main.ts"></script>
-  </body>
-</html>
+<div class="text-gray-400 font-mono text-[11px] tracking-wide mt-0.5 flex items-center justify-end space-x-1">
+<span>——</span>
+<span>非人类程序员出品</span>
+</div>
+</div>
+</footer>
+<!-- END: Bottom Bar / Player Status -->
+</div>
+</div>
+<!-- 功能：为现有 FPS HUD 与阵营选择逻辑保留兼容节点，主菜单阶段隐藏。时间：2026-10-01；作者：lq。 -->
+<div id="crosshair"><span class="top"></span><span class="bottom"></span><span class="left"></span><span class="right"></span></div>
+<div id="hitmarker"></div><div id="flashbang"></div><div id="bombflash"></div><div id="scope"></div><div id="status"></div><div id="roundbar"></div><div id="feed"></div><div id="radio-caption"></div><div id="buymenu"></div><div id="centre"></div><div id="radar"></div><div id="scoreboard"></div><div id="hud"></div>
+<div id="team-select" hidden><button id="team-ct" type="button">CT</button><button id="team-t" type="button">T</button></div>
+<div id="nomap" hidden></div>
+
+<!-- 功能：帮助、设置与局域网服务器弹窗，服务于主菜单交互和后续局域网模式接入。时间：2026-10-01；作者：lq。 -->
+<div id="menu-modal" class="menu-modal" hidden>
+  <div class="menu-modal-backdrop" data-close-modal></div>
+  <section class="menu-modal-card" role="dialog" aria-modal="true" aria-labelledby="menu-modal-title">
+    <button class="menu-modal-close" type="button" data-close-modal aria-label="关闭">×</button>
+    <h2 id="menu-modal-title">帮助</h2>
+    <div id="menu-modal-body"></div>
+  </section>
+</div>
+<!-- BEGIN: Interactive Feedback Script -->
+<script data-purpose="simple-interactive-actions">
+    document.addEventListener('DOMContentLoaded', () => {
+      // 功能：打开帮助、设置和局域网服务器列表弹窗。时间：2026-10-01；作者：lq。
+      const modal = document.getElementById('menu-modal');
+      const modalTitle = document.getElementById('menu-modal-title');
+      const modalBody = document.getElementById('menu-modal-body');
+      const openModal = (kind) => {
+        if (!modal || !modalTitle || !modalBody) return;
+        const content = {
+          help: {
+            title: '游戏帮助 / HELP',
+            body: `<div class="menu-modal-grid"><section><h3>移动与视角</h3><ul><li>W / A / S / D：移动</li><li>鼠标：观察与瞄准</li><li>Space：跳跃　Ctrl：蹲下</li><li>Shift：静步移动</li></ul></section><section><h3>战斗操作</h3><ul><li>鼠标左键：开火</li><li>鼠标右键：开镜或刀捅</li><li>R：换弹　G：丢枪　E：拾枪</li><li>1 / 2 / 3：主武器、手枪、刀</li></ul></section><section><h3>装备快捷键</h3><ul><li>4：高爆手雷　5：闪光弹</li><li>6：烟雾弹　Q / 滚轮：切换装备</li><li>B：购买菜单　Tab：战绩面板</li></ul></section><section><h3>对局功能</h3><ul><li>M：重新选择阵营</li><li>K：回到出生点</li><li>F：切换调试穿墙飞行</li><li>Esc：释放鼠标</li></ul></section></div>`
+          },
+          settings: {
+            title: '游戏设置 / SETTINGS',
+            body: `<div class="setting-row"><label for="setting-team">玩家阵营</label><select id="setting-team"><option value="ct">反恐精英 CT</option><option value="t">恐怖分子 T</option></select></div><div class="setting-row"><label for="setting-skill">机器人难度</label><select id="setting-skill"><option value="0.15">简单</option><option value="0.45">普通</option><option value="0.75">困难</option><option value="0.95">专家</option></select></div><div class="setting-row"><label for="setting-bots">机器人数量</label><input id="setting-bots" type="range" min="1" max="7" value="3" /></div><div class="menu-modal-actions"><button data-close-modal>取消</button><button class="primary" data-apply-settings>应用设置</button></div>`
+          },
+          lan: {
+            title: '局域网服务器 / LAN SERVERS',
+            body: `<table class="lan-table"><thead><tr><th>房间</th><th>地图</th><th>玩家</th><th>延迟</th></tr></thead><tbody><tr><td>CT_Fan001 的训练房</td><td>de_dust2</td><td>3 / 10</td><td>12 ms</td></tr><tr><td>Dust2 经典对战</td><td>de_dust</td><td>6 / 10</td><td>24 ms</td></tr><tr><td>Inferno 夜战</td><td>de_inferno</td><td>2 / 10</td><td>31 ms</td></tr></tbody></table><div class="menu-modal-actions"><button class="primary" data-close-modal>刷新列表</button></div>`
+          }
+        }[kind];
+        if (!content) return;
+        modalTitle.textContent = content.title;
+        modalBody.innerHTML = content.body;
+        modal.hidden = false;
+      };
+      const closeModal = () => { if (modal) modal.hidden = true; };
+      document.querySelectorAll('[data-menu="help"], [data-menu="settings"], [data-menu="lan"]').forEach((item) => item.addEventListener('click', (event) => {
+        event.preventDefault();
+        openModal(item.dataset.menu);
+      }));
+      document.querySelectorAll('[data-close-modal]').forEach((item) => item.addEventListener('click', closeModal));
+      document.addEventListener('click', (event) => {
+        const target = event.target;
+        if (target instanceof HTMLElement && target.matches('[data-apply-settings]')) {
+          const team = document.getElementById('setting-team')?.value ?? 'ct';
+          const skill = document.getElementById('setting-skill')?.value ?? '0.15';
+          const bots = document.getElementById('setting-bots')?.value ?? '3';
+          localStorage.setItem('cs15-settings', JSON.stringify({ team, skill, bots }));
+          closeModal();
+        }
+      });
+      // Audio click effect simulation
+      const buttons = document.querySelectorAll('button, a');
+      buttons.forEach(btn => {
+        btn.addEventListener('mouseenter', () => {
+          // Tactical hover tick placeholder
+        });
+        btn.addEventListener('click', (e) => {
+          // Visual feedback on click
+          btn.classList.add('scale-[0.98]');
+          setTimeout(() => btn.classList.remove('scale-[0.98]'), 120);
+        });
+      });
+    });
+  </script>
+<!-- END: Interactive Feedback Script -->
+<script type="module" src="/src/main.ts"></script>
+</body></html>

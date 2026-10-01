@@ -324,6 +324,40 @@ startButton.addEventListener('click', () => {
   });
 });
 
+// 功能：主菜单热点提供快速开始、服务器、设置等入口反馈；快速开始沿用原有鼠标锁定流程。时间：2026-09-30；作者：lq。
+const menuToast = document.getElementById('menu-toast');
+const menuLabels: Record<string, string> = {
+  servers: '服务器列表正在准备中',
+  create: '创建房间：本地 4v4 房间已就绪',
+  settings: '游戏设置可在对局中按 Esc 调整',
+  ranking: '排行榜：本周最佳 CT_Fan001',
+  help: '帮助：点击快速开始进入训练对局',
+  profile: 'CT_Fan001 · Lv. 12 · 经验值 3200 / 5000',
+  news: '最新公告：CS1.5 Web 测试版上线',
+  maps: '热门地图：de_dust2 · de_inferno · cs_assault',
+  exit: '感谢游玩 Counter-Strike 1.5 Web',
+};
+let menuToastTimer = 0;
+function showMenuToast(message: string): void {
+  if (!menuToast) return;
+  menuToast.textContent = message;
+  menuToast.classList.add('show');
+  window.clearTimeout(menuToastTimer);
+  menuToastTimer = window.setTimeout(() => menuToast.classList.remove('show'), 2400);
+}
+document.querySelectorAll<HTMLElement>('[data-menu]').forEach((button) => {
+  // 快速开始按钮已有独立监听器，避免事件冒泡后再次触发 click 造成递归。
+  if (button === startButton) return;
+  button.addEventListener('click', () => {
+    const action = button.dataset.menu ?? '';
+    if (action === 'play') {
+      startButton.click();
+      return;
+    }
+    showMenuToast(menuLabels[action] ?? '功能即将开放');
+  });
+});
+
 renderer.webgl.domElement.addEventListener('click', () => {
   if (!input.locked) input.requestPointerLock();
 });
