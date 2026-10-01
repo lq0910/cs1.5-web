@@ -44,6 +44,10 @@ const container = must('app');
 const hudElement = must('hud');
 const overlay = must('overlay');
 const startButton = must<HTMLButtonElement>('startBtn');
+// 功能：区分首次进入的主菜单与对局中的暂停菜单，避免两个界面叠加。时间：2026-10-01；作者：lq。
+const pauseMenu = must('pause-menu');
+const resumeButton = must<HTMLButtonElement>('resumeBtn');
+const pauseExitButton = must<HTMLButtonElement>('pauseExitBtn');
 const noMapNotice = must('nomap');
 const crosshair = must('crosshair');
 const scopeOverlay = must('scope');
@@ -186,7 +190,29 @@ const playerCmd = makeUserCmd();
 // --------------------------------------------------------------------- input
 const input = new Input(renderer.webgl.domElement);
 input.attach();
-input.onPress('KeyM', () => { if (input.locked) document.exitPointerLock(); });
+// 功能：记录对局是否已开始以及是否因 Esc 暂停，主菜单和运行 HUD 据此互斥显示。时间：2026-10-01；作者：lq。
+let gameStarted = false;
+let gamePaused = false;
+
+function setGameState(started: boolean, paused: boolean): void {
+  gameStarted = started;
+  gamePaused = started && paused;
+  overlay.classList.toggle('hidden', started);
+  pauseMenu.hidden = !gamePaused;
+  document.body.classList.toggle('game-active', started);
+  document.body.classList.toggle('game-paused', gamePaused);
+}
+
+// 功能：M 键继续返回主菜单用于重新选择阵营，Esc 则只进入对局暂停层。时间：2026-10-01；作者：lq。
+input.onPress('KeyM', () => {
+  if (!input.locked || !gameStarted) return;
+  setGameState(false, false);
+  document.exitPointerLock();
+});
+// 功能：Esc 释放鼠标时暂停固定步长模拟，防止暂停菜单出现后回合仍继续。时间：2026-10-01；作者：lq。
+input.onPress('Escape', () => {
+  if (gameStarted && input.locked) document.exitPointerLock();
+});
 
 let pendingSlot: WeaponSlot | null = null;
 let pendingGrenade: GrenadeKind | null = null;
@@ -305,8 +331,14 @@ function soundList(): string[] {
 }
 
 input.onLockChange = (locked) => {
-  overlay.classList.toggle('hidden', locked);
-  crosshair.classList.toggle('on', locked);
+  if (!gameStarted) {
+    setGameState(false, false);
+  } else if (locked) {
+    setGameState(true, false);
+  } else {
+    setGameState(true, true);
+  }
+  crosshair.classList.toggle('on', locked && gameStarted && !gamePaused);
   if (locked) {
     void audio.unlock().then(() => {
       audio.retryFailed();
@@ -316,12 +348,25 @@ input.onLockChange = (locked) => {
 };
 
 startButton.addEventListener('click', () => {
-  overlay.classList.add('hidden');
+  // 功能：快速开始只进入运行态，不再复用暂停菜单的显示逻辑。时间：2026-10-01；作者：lq。
+  setGameState(true, false);
   input.requestPointerLock();
   void audio.unlock().then(() => {
     audio.retryFailed();
     void audio.preload(soundList());
   });
+});
+
+// 功能：恢复暂停前的同一局比赛，并重新锁定鼠标继续操作。时间：2026-10-01；作者：lq。
+resumeButton.addEventListener('click', () => {
+  setGameState(true, false);
+  input.requestPointerLock();
+});
+
+// 功能：从暂停菜单返回主菜单但保留当前 Match 状态，之后再次开始可继续原回合。时间：2026-10-01；作者：lq。
+pauseExitButton.addEventListener('click', () => {
+  setGameState(false, false);
+  document.exitPointerLock();
 });
 
 // 功能：主菜单热点提供快速开始、服务器、设置等入口反馈；快速开始沿用原有鼠标锁定流程。时间：2026-09-30；作者：lq。
@@ -359,11 +404,15 @@ document.querySelectorAll<HTMLElement>('[data-menu]').forEach((button) => {
 });
 
 renderer.webgl.domElement.addEventListener('click', () => {
-  if (!input.locked) input.requestPointerLock();
+  // 功能：暂停时点击游戏画布等同于恢复，主菜单阶段不抢占鼠标。时间：2026-10-01；作者：lq。
+  if (gameStarted && gamePaused) {
+    setGameState(true, false);
+    input.requestPointerLock();
+  } else if (gameStarted && !input.locked) input.requestPointerLock();
 });
 
 if (params.has('nolock')) {
-  overlay.classList.add('hidden');
+  setGameState(true, false);
   crosshair.classList.add('on');
 }
 
@@ -459,6 +508,8 @@ function frame(now: number): void {
   const rawDt = (now - lastTime) / 1000;
   lastTime = now;
   const dt = Math.min(rawDt, 0.25);
+  // 功能：暂停或主菜单阶段不推进固定步长，确保 Esc 后回合计时、BOT 和物理全部冻结。时间：2026-10-01；作者：lq。
+  const simulationActive = gameStarted && !gamePaused;
 
   fpsAccum += rawDt;
   frames++;
@@ -469,14 +520,16 @@ function frame(now: number): void {
   }
 
   const look = input.consumeLookDelta();
-  lookYaw += look.yaw;
-  if (lookYaw > 180) lookYaw -= 360;
-  else if (lookYaw < -180) lookYaw += 360;
-  lookPitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, lookPitch + look.pitch));
+  if (simulationActive) {
+    lookYaw += look.yaw;
+    if (lookYaw > 180) lookYaw -= 360;
+    else if (lookYaw < -180) lookYaw += 360;
+    lookPitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, lookPitch + look.pitch));
+  }
 
-  accumulator += dt;
+  if (simulationActive) accumulator += dt;
   let steps = 0;
-  while (accumulator >= TICK_INTERVAL && steps < 8) {
+  while (simulationActive && accumulator >= TICK_INTERVAL && steps < 8) {
     if (pendingBuy) {
       // 功能：购买成功后装备新枪或手雷并关闭菜单，使数字键购买有即时反馈。时间：2026-09-29；作者：lq。
       const item = BUY_MENU.find((entry) => entry.id === pendingBuy);
@@ -802,7 +855,7 @@ function frame(now: number): void {
   }
   renderer.camera.updateMatrixWorld();
 
-  viewModel.update(dt, {
+  viewModel.update(simulationActive ? dt : 0, {
     speed: Math.hypot(playerActor.move.velocity.x, playerActor.move.velocity.y),
     onGround: playerActor.move.onground,
     ducked: playerActor.move.ducked,
@@ -834,7 +887,7 @@ function frame(now: number): void {
   flashbangOverlay.style.opacity = String(Math.max(0, Math.min(1, (flashUntil - simTime) / 0.8)));
   // 功能：C4 爆炸闪光在 0.38 秒内快速淡出，不遮挡下一回合。时间：2026-09-30；作者：lq。
   bombFlashOverlay.style.opacity = String(Math.max(0, (bombFlashUntil - simTime) / 0.38) * bombFlashStrength);
-  effects.update(dt);
+  effects.update(simulationActive ? dt : 0);
   renderer.render();
 
   hudAccum += rawDt;

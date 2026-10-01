@@ -127,6 +127,16 @@
   #app { position: fixed; inset: 0; z-index: 0; }
   #overlay { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; }
   #overlay.hidden { display: none; }
+  /* 功能：暂停菜单独立于主菜单显示，确保 Esc 后只出现对局暂停层。时间：2026-10-01；作者：lq。 */
+  #pause-menu[hidden] { display: none !important; }
+  #pause-menu { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: rgba(4, 7, 10, .56); backdrop-filter: blur(3px); }
+  #pause-menu .pause-card { width: min(360px, calc(100vw - 40px)); padding: 30px 28px 26px; border: 1px solid rgba(234,179,8,.7); border-radius: 8px; background: linear-gradient(145deg, rgba(20,27,35,.98), rgba(7,11,16,.98)); box-shadow: 0 20px 60px rgba(0,0,0,.7), inset 0 0 28px rgba(234,179,8,.06); text-align: center; }
+  #pause-menu h2 { margin: 0 0 8px; color: #facc15; font-size: 24px; letter-spacing: .12em; }
+  #pause-menu p { margin: 0 0 22px; color: #aeb6bd; font-size: 13px; }
+  #pause-menu .pause-actions { display: grid; gap: 10px; }
+  #pause-menu button { padding: 10px 14px; border: 1px solid rgba(255,255,255,.2); border-radius: 4px; background: #202c35; color: #e5e7eb; cursor: pointer; font: inherit; }
+  #pause-menu button.primary { border-color: #eab308; background: #80631a; color: #fff4bd; }
+  #pause-menu button:hover { filter: brightness(1.15); }
   #panel { position: relative; width: 100%; height: 100%; }
   #crosshair, #hitmarker, #flashbang, #bombflash, #scope, #status, #roundbar, #feed, #radio-caption, #buymenu, #centre, #radar, #scoreboard, #hud, #team-select, #nomap { pointer-events: none; }
   #nomap[hidden], #team-select[hidden] { display: none !important; }
@@ -196,6 +206,26 @@
   #flashbang, #bombflash { position: fixed; inset: 0; z-index: 42; opacity: 0; pointer-events: none; }
   #flashbang { background: #fff; }
   #bombflash { background: #ffe5b4; }
+  /* 功能：未进入对局时隐藏所有运行期 HUD，避免主菜单与 FPS 界面混合。时间：2026-10-01；作者：lq。 */
+  body:not(.game-active) #crosshair,
+  body:not(.game-active) #hitmarker,
+  body:not(.game-active) #flashbang,
+  body:not(.game-active) #bombflash,
+  body:not(.game-active) #scope,
+  body:not(.game-active) #status,
+  body:not(.game-active) #roundbar,
+  body:not(.game-active) #feed,
+  body:not(.game-active) #radio-caption,
+  body:not(.game-active) #buymenu,
+  body:not(.game-active) #centre,
+  body:not(.game-active) #radar,
+  body:not(.game-active) #scoreboard,
+  body:not(.game-active) #hud { display: none !important; }
+  /* 功能：暂停时隐藏交互型战斗提示，保留冻结的 3D 场景作为返回背景。时间：2026-10-01；作者：lq。 */
+  body.game-paused #crosshair,
+  body.game-paused #hitmarker,
+  body.game-paused #buymenu,
+  body.game-paused #scoreboard { display: none !important; }
 
   /* 功能：主菜单弹窗的深色战术面板与表单样式。时间：2026-10-01；作者：lq。 */
   .menu-modal[hidden] { display: none !important; }
@@ -548,6 +578,17 @@
 </footer>
 <!-- END: Bottom Bar / Player Status -->
 </div>
+</div>
+<!-- 功能：对局中按 Esc 显示独立暂停界面，恢复时继续当前回合。时间：2026-10-01；作者：lq。 -->
+<div id="pause-menu" hidden>
+  <section class="pause-card" role="dialog" aria-modal="true" aria-labelledby="pause-title">
+    <h2 id="pause-title">游戏已暂停</h2>
+    <p>对局状态已冻结，选择继续即可回到当前回合。</p>
+    <div class="pause-actions">
+      <button id="resumeBtn" class="primary" type="button">继续游戏</button>
+      <button id="pauseExitBtn" type="button">返回主菜单</button>
+    </div>
+  </section>
 </div>
 <!-- 功能：为现有 FPS HUD 与阵营选择逻辑保留兼容节点，主菜单阶段隐藏。时间：2026-10-01；作者：lq。 -->
 <div id="crosshair"><span class="top"></span><span class="bottom"></span><span class="left"></span><span class="right"></span></div>
