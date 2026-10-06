@@ -21,7 +21,8 @@ export class Player {
   pitch = 0;
   yaw = 0;
   noclip = false;
-  health = 100;
+  // 功能：本地玩家状态默认使用 1000 血量，与对局 Actor 的生命值保持一致。时间：2026-10-05；作者：lq。
+  health = 1000;
   armor = 0;
 
   /** Smooths the visual crouch transition (the physics hull snaps instantly). */
@@ -39,7 +40,8 @@ export class Player {
   respawn(origin: Vec3, yaw: number): void {
     this.move = createMoveState(origin, yaw);
     this.move.maxspeed = 250;
-    this.health = 100;
+    // 功能：玩家对象重新初始化时恢复 1000 血量。时间：2026-10-05；作者：lq。
+    this.health = 1000;
     this.armor = 0;
     this.yaw = yaw;
     this.pitch = 0;

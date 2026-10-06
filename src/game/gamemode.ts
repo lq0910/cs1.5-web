@@ -256,8 +256,8 @@ export class GameMode {
       actor.move.origin = v3(spawn.x, spawn.y, spawn.z);
       actor.move.velocity = v3(0, 0, 0);
       actor.move.onground = true;
-      // 功能：每回合开始恢复玩家双倍血量 200，BOT 保持 100。时间：2026-09-30；作者：lq。
-      actor.health = actor.isBot ? 100 : 200;
+      // 功能：每回合开始恢复玩家 1000 血量，BOT 保持 100，确保增强生命值不会在换局时丢失。时间：2026-10-05；作者：lq。
+      actor.health = actor.isBot ? 100 : 1000;
       // 功能：阵亡者下一局重新购买护甲，存活者保留原有护甲。时间：2026-09-29；作者：lq。
       if (!survived) actor.armor = 0;
       actor.alive = true;

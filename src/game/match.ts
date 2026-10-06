@@ -139,6 +139,8 @@ export class Match {
   private readonly graph: NavGraph | null;
   private readonly sites: ObjectiveArea[];
   private readonly skill: number;
+  // 功能：根据 BOT 难度缩放 BOT 子弹伤害；简单模式除了降低命中率，也降低单发伤害。时间：2026-10-05；作者：lq。
+  private readonly botDamageMultiplier: number;
   private readonly teamSize: number;
   private readonly dt = TICK_INTERVAL;
   private readonly spawns: { ct: Vec3[]; t: Vec3[] };
@@ -170,6 +172,8 @@ export class Match {
     this.sites = options.sites;
     // 功能：默认使用简单 BOT 难度，降低玩家遭遇的命中与反应压力。时间：2026-09-29；作者：lq。
     this.skill = options.skill ?? 0.15;
+    // 功能：简单难度 BOT 造成约 45% 武器伤害，最高难度恢复 100% 伤害。时间：2026-10-05；作者：lq。
+    this.botDamageMultiplier = 0.35 + this.skill * 0.65;
     this.teamSize = options.teamSize ?? 4;
 
     let seed = options.seed ?? 12345;
@@ -473,7 +477,8 @@ export class Match {
       for (const victim of this.actors) {
         if (!victim.alive) continue;
         const distance = Math.hypot(victim.move.origin.x - blast.x, victim.move.origin.y - blast.y, victim.move.origin.z - blast.z);
-        const damage = Math.max(0, 500 * (1 - distance / 1000));
+        // 功能：玩家生命值提升到 1000 后，C4 爆心仍保持原版近距离必杀效果，并按距离衰减。时间：2026-10-05；作者：lq。
+        const damage = Math.max(0, 1200 * (1 - distance / 1000));
         if (damage <= 0) continue;
         const result = damageActor(victim, damage, 1);
         if (result.killed) { victim.diedAt = now; this.dropOnDeath(victim, now); }
@@ -772,7 +777,9 @@ export class Match {
     shot.end = hit.point;
     shot.hit = false;
     shot.distance = hit.distance;
-    const raw = weapon.damage * Math.pow(weapon.rangeModifier, hit.distance / 500) * weapon.hitgroups[hit.group];
+    // 功能：BOT 开火伤害按难度缩放，避免简单模式仍能用原始武器伤害快速击杀玩家。时间：2026-10-05；作者：lq。
+    const botDamageScale = shooter.isBot ? this.botDamageMultiplier : 1;
+    const raw = weapon.damage * botDamageScale * Math.pow(weapon.rangeModifier, hit.distance / 500) * weapon.hitgroups[hit.group];
     const result = damageActor(victim, raw, weapon.armorRatio);
 
     if (result.killed) {

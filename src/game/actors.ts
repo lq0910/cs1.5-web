@@ -105,8 +105,8 @@ export function createActor(options: {
     hull: HULL_STANDING,
     pitch: 0,
     yaw: options.yaw,
-    // 功能：玩家初始血量翻倍至 200，BOT 保持原版 100 血量。时间：2026-09-30；作者：lq。
-    health: options.isBot ? 100 : 200,
+    // 功能：玩家初始血量提升至 1000，BOT 保持原版 100 血量，降低简单模式下被快速击杀的情况。时间：2026-10-05；作者：lq。
+    health: options.isBot ? 100 : 1000,
     armor: 0,
     alive: true,
     diedAt: -99,
@@ -136,8 +136,8 @@ export function respawnActor(
   actor.hull = HULL_STANDING;
   actor.pitch = 0;
   actor.yaw = yaw;
-  // 功能：玩家复活恢复 200 血量，BOT 复活恢复 100 血量。时间：2026-09-30；作者：lq。
-  actor.health = actor.isBot ? 100 : 200;
+  // 功能：玩家复活恢复 1000 血量，BOT 复活恢复 100 血量。时间：2026-10-05；作者：lq。
+  actor.health = actor.isBot ? 100 : 1000;
   actor.armor = 0;
   actor.alive = true;
   // 功能：复活后清除上一回合的阵亡时间，避免新角色继续播放倒地动作。时间：2026-09-29；作者：lq。
