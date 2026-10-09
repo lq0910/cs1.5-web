@@ -15,6 +15,8 @@
 
 import type { Vec3 } from '../engine/math.ts';
 import { v3 } from '../engine/math.ts';
+// 功能：用玩家碰撞体校验网格终点到掉落 C4 的最后一段路。时间：2026-10-09；作者：lq。
+import { HULL_STANDING } from '../engine/collision/types.ts';
 import type { CollisionWorld } from '../engine/collision/types.ts';
 import type { NavGraph, PathResult } from './nav.ts';
 import { findPath, randomNodeNear } from './nav.ts';
@@ -69,7 +71,8 @@ const FOV_COS = Math.cos((100 * Math.PI) / 180); // half-angle, degrees
 const MAX_VIEW_DISTANCE = 3200;
 // 功能：降低 BOT 转身角速度，避免导航路点切换时高速原地旋转。时间：2026-09-30；作者：lq。
 const TURN_RATE_DEG = 240;
-const WAYPOINT_RADIUS = 48;
+// 功能：缩小转角路点的通过半径，避免提前切弯撞到门框。时间：2026-10-09；作者：lq。
+const WAYPOINT_RADIUS = 24;
 
 function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
@@ -118,6 +121,9 @@ export class BotBrain {
   private strafeUntil = 0;
   private strafeDirection = 1;
   private investigating: Vec3 | null = null;
+  /** 功能：分别记录战斗反应和导航目标，防止枪声或发现敌人不断重置进攻路线。时间：2026-10-09；作者：lq。 */
+  private reactionReadyAt = 0;
+  private navigationGoal: Vec3 | null = null;
 
   constructor(seed: number, start: Vec3) {
     this.random = mulberry32(seed);
@@ -150,7 +156,8 @@ export class BotBrain {
   hearNoise(position: Vec3): void {
     if (this.state === 'engage') return;
     this.investigating = v3(position.x, position.y, position.z);
-    this.repathAt = 0;
+    // 功能：有明确包点任务时只记录声音，不打断正在执行的路径。时间：2026-10-09；作者：lq。
+    if (!this.navigationGoal) this.repathAt = 0;
   }
 
   think(dt: number, context: BotContext): BotCommand {
@@ -214,7 +221,8 @@ export class BotBrain {
       this.targetSeenAt = now;
       // Reaction time: better bots react faster.
       const reaction = 0.32 - context.skill * 0.2 + this.random() * 0.1;
-      this.repathAt = now + reaction;
+      // 功能：反应计时独立于寻路计时，保持简单难度的枪法而不降低进攻执行力。时间：2026-10-09；作者：lq。
+      this.reactionReadyAt = now + reaction;
     } else if (bestEnemy) {
       this.target = bestEnemy;
     } else {
@@ -231,7 +239,7 @@ export class BotBrain {
       // Lost sight: go and check where the enemy was.
       this.investigating = this.lastKnownPosition;
       this.lastKnownPosition = null;
-      this.repathAt = 0;
+      if (!context.goal) this.repathAt = 0;
     }
 
     // ---- aiming
@@ -271,7 +279,7 @@ export class BotBrain {
 
       // Fire when settled and the reaction time has passed.
       const aimError = Math.hypot(this.aimErrorYaw, this.aimErrorPitch);
-      const ready = now > this.repathAt && aimError < 2.2 + context.skill * 2;
+      const ready = now > this.reactionReadyAt && aimError < 2.2 + context.skill * 2;
       if (ready && runtime.reloadEndTime === 0) {
         if (weapon.automatic) {
           if (now > this.nextBurstAt) {
@@ -339,12 +347,33 @@ export class BotBrain {
     }
 
     if (goalPosition) {
-      if (!this.path || now > this.repathAt) {
+      // 功能：目标切换立即重新规划；保持同一路径直至失败，避免每两秒返回身后的网格点。时间：2026-10-09；作者：lq。
+      const goalChanged = !this.navigationGoal || Math.hypot(
+        goalPosition.x - this.navigationGoal.x, goalPosition.y - this.navigationGoal.y,
+        goalPosition.z - this.navigationGoal.z,
+      ) > 32;
+      if (goalChanged) {
+        this.navigationGoal = v3(goalPosition.x, goalPosition.y, goalPosition.z);
+        this.arrived = false;
+        this.path = null;
+        this.repathAt = 0;
+      }
+      // 功能：持包、捡包和拆包必须走到交互范围内，不能在距离目标 200 单位处停步。时间：2026-10-09；作者：lq。
+      const arrivalRadius = context.goal?.kind === 'patrol' ? 120 : 24;
+      this.lastGoalDistance = Math.hypot(goalPosition.x - self.move.origin.x, goalPosition.y - self.move.origin.y);
+      this.arrived = this.lastGoalDistance < arrivalRadius && Math.abs(goalPosition.z - self.move.origin.z) < 48;
+      if (!this.arrived && (goalChanged || now >= this.repathAt)) {
         this.path = context.graph ? findPath(context.graph, self.move.origin, goalPosition) : null;
+        // 功能：可直达的最后一段补到真实交互位置，避免网格取整后停在 C4 拾取范围外。时间：2026-10-09；作者：lq。
+        const end = this.path?.points.at(-1);
+        if (end && Math.abs(end.z - goalPosition.z) < 48 && context.world.traceHull(
+          HULL_STANDING, v3(end.x, end.y, end.z + 2), v3(goalPosition.x, goalPosition.y, end.z + 2),
+        ).fraction === 1) this.path!.points.push(v3(goalPosition.x, goalPosition.y, end.z));
         this.pathIndex = 0;
         this.waypointSince = now;
         this.waypointSkips = 0;
-        this.repathAt = now + 1.5 + this.random();
+        // 功能：给门洞路点留出通过和脱困时间，连续路线不被短周期重规划打断。时间：2026-10-09；作者：lq。
+        this.repathAt = now + 12 + this.random() * 2;
         this.arrived = false;
 
         if (!this.path) {
@@ -353,6 +382,7 @@ export class BotBrain {
           // separates them — which is what produced the endless on-the-spot
           // hopping. Patrol a nearby spot instead.
           this.routeFailures++;
+          this.repathAt = now + 3;
           const wander = context.graph
             ? randomNodeNear(context.graph, self.move.origin, 1400, this.random)
             : -1;
@@ -405,7 +435,7 @@ export class BotBrain {
         this.lastGoalDistance = goalDistance;
         // Close enough to the objective: hold the position instead of shoving
         // into whatever happens to be in the way.
-        if (goalDistance < 200) {
+        if (goalDistance < arrivalRadius && Math.abs(goalPosition.z - self.move.origin.z) < 48) {
           this.arrived = true;
           this.path = null;
         }
@@ -415,12 +445,13 @@ export class BotBrain {
         const desiredYaw =
           (Math.atan2(waypoint.y - self.move.origin.y, waypoint.x - self.move.origin.x) * 180) /
           Math.PI;
-        const facing = Math.abs(normalizeAngle(desiredYaw - command.yaw)) < 75;
+        // 功能：急转弯先收速并对准，避免跑步惯性越过路点撞入墙角。时间：2026-10-09；作者：lq。
+        const facing = Math.abs(normalizeAngle(desiredYaw - command.yaw)) < 25;
 
         if (distance > 24 && facing && !this.arrived) {
           this.state = 'advance';
           command.state = 'advance';
-          command.forwardmove = CL_FORWARD_SPEED;
+          command.forwardmove = Math.min(CL_FORWARD_SPEED, Math.max(80, distance * 2));
           command.buttons |= IN_FORWARD;
         }
       } else {
@@ -449,7 +480,8 @@ export class BotBrain {
       const stuckFor = now - this.stuckSince;
       if (stuckFor > 0.4) {
         // Slide along the obstacle instead of hopping on the spot.
-        command.sidemove = CL_SIDE_SPEED * 0.8;
+        // 功能：脱困横移数值与随机左右方向一致，避免永远向同一侧挤墙。时间：2026-10-09；作者：lq。
+        command.sidemove = CL_SIDE_SPEED * 0.8 * this.strafeDirection;
         command.buttons |= this.strafeDirection > 0 ? IN_MOVERIGHT : IN_MOVELEFT;
         command.forwardmove = CL_FORWARD_SPEED * 0.35;
       }
@@ -467,8 +499,8 @@ export class BotBrain {
   }
 
   private finish(command: BotCommand, self: Actor, now: number, dt: number): BotCommand {
-    // 功能：BOT 行走时使用 CS 1.5 的 IN_WALK 速度上限，令步幅和第三人称 walk 动画同步，消除警察平移感。时间：2026-09-30；作者：lq。
-    if (command.forwardmove !== 0 || command.sidemove !== 0) command.buttons |= IN_WALK;
+    // 功能：进攻时正常跑步，交火时慢走；避免所有难度都以步行速度耗完回合。时间：2026-10-09；作者：lq。
+    if (command.state === 'engage' && (command.forwardmove !== 0 || command.sidemove !== 0)) command.buttons |= IN_WALK;
     this.lastPosition = v3(self.move.origin.x, self.move.origin.y, self.move.origin.z);
     void dt;
     void now;

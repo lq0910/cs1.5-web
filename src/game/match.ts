@@ -19,8 +19,10 @@ import { v3 } from '../engine/math.ts';
 import type { CollisionWorld } from '../engine/collision/types.ts';
 import type { MapData } from './map/build.ts';
 import type { NavGraph } from './nav.ts';
-import { nearestNode, randomNodeNear } from './nav.ts';
+import { findPath, nearestNode, randomNodeNear } from './nav.ts';
 import type { ObjectiveArea } from './objectives.ts';
+// 功能：包点目标必须处于真实装包触发区域内。时间：2026-10-09；作者：lq。
+import { insideArea } from './objectives.ts';
 import {
   createActor,
   actorEye,
@@ -165,6 +167,8 @@ export class Match {
   private readonly siteGoals: Vec3[] = [];
   /** Bombsite the terrorists attack this round (chosen once per round). */
   private roundSiteIndex = 0;
+  /** 功能：每个队员固定守包位置，避免每帧随机目标导致反复转向。时间：2026-10-09；作者：lq。 */
+  private readonly guardGoals = new Map<number, Vec3>();
 
   constructor(options: MatchOptions) {
     this.world = options.map.collision;
@@ -272,7 +276,15 @@ export class Match {
     }
 
     for (const site of this.sites) {
-      const node = this.graph ? nearestNode(this.graph, site.center) : -1;
+      // 功能：从匪家可达且位于触发区内的节点中选装包点，避开墙内中心和孤立平台。时间：2026-10-09；作者：lq。
+      const graph = this.graph;
+      const candidates = graph ? graph.nodes.map((position, index) => ({ position, index }))
+        .filter(({ position }) => insideArea(site, position))
+        .sort((a, b) => Math.hypot(a.position.x - site.center.x, a.position.y - site.center.y)
+          - Math.hypot(b.position.x - site.center.x, b.position.y - site.center.y)) : [];
+      const start = this.spawns.t[0];
+      const node = graph ? candidates.find(({ position }) => !start || findPath(graph, start, position))?.index
+        ?? nearestNode(graph, site.center) : -1;
       this.siteGoals.push(
         node >= 0 && this.graph
           ? v3(this.graph.nodes[node]!.x, this.graph.nodes[node]!.y, this.graph.nodes[node]!.z)
@@ -297,8 +309,22 @@ export class Match {
       moneyAwards: [],
     };
     this.mode.startRound(this.actors, this.spawns, now, events);
+    this.prepareBotRound();
     this.droppedWeapons.length = 0;
     this.autoBuyBots(now);
+  }
+
+  /** 功能：新回合选择可达进攻包点并清空旧路线和守包位置，难度只调整战斗能力。时间：2026-10-09；作者：lq。 */
+  private prepareBotRound(): void {
+    this.guardGoals.clear();
+    const carrier = this.mode.bomb.carrier;
+    const reachable = this.siteGoals.map((position, index) => ({ position, index }))
+      .filter(({ position }) => !this.graph || !carrier || findPath(this.graph, carrier.move.origin, position));
+    this.roundSiteIndex = reachable.length > 0
+      ? reachable[Math.floor(this.randomness() * reachable.length)]!.index : 0;
+    for (const actor of this.actors) {
+      if (actor.isBot) this.brains.set(actor.id, new BotBrain(Math.floor(this.randomness() * 0xffffff), actor.move.origin));
+    }
   }
 
   /** 功能：把指定栏位枪械放在脚边地面，保留弹夹与备用弹药供队员拾取。时间：2026-09-29；作者：lq。 */
@@ -421,15 +447,21 @@ export class Match {
       // 功能：C4 掉落时队员先回收背包，再继续进攻包点。时间：2026-09-30；作者：lq。
       if (mode.bomb.state === 'dropped' && mode.bomb.position) return { position: mode.bomb.position, kind: 'bomb' };
       if (mode.bomb.state === 'planted' && mode.bomb.position) {
-        // Defend the bomb: spread out around it.
-        return { position: near(mode.bomb.position, 360), kind: 'bomb' };
+        // 功能：守包点每回合只分配一次，并校验可达性，减少队员原地来回转悠。时间：2026-10-09；作者：lq。
+        if (!this.guardGoals.has(actor.id)) {
+          const picked = near(mode.bomb.position, 360);
+          this.guardGoals.set(actor.id, !this.graph || findPath(this.graph, actor.move.origin, picked)
+            ? picked : actor.move.origin);
+        }
+        return { position: this.guardGoals.get(actor.id)!, kind: 'patrol' };
       }
       // Everyone escorts the carrier to the chosen site.
       return target ? { position: target, kind: 'site' } : null;
     }
 
     if (mode.bomb.state === 'planted' && mode.bomb.position) {
-      return { position: near(mode.bomb.position, 120), kind: 'defuse' };
+      // 功能：CT 直接接近 C4，取消每帧随机的拆包目标。时间：2026-10-09；作者：lq。
+      return { position: mode.bomb.position, kind: 'defuse' };
     }
     // CTs split between the sites, holding angles.
     if (this.siteGoals.length > 1) {
@@ -466,6 +498,7 @@ export class Match {
     };
 
     if (events.mode.roundStarted) {
+      this.prepareBotRound();
       this.grenadeProjectiles.length = 0;
       // 功能：每局开始清空上一局地面的枪械，防止跨回合重复拾取。时间：2026-09-29；作者：lq。
       this.droppedWeapons.length = 0;
@@ -550,10 +583,6 @@ export class Match {
       }
     }
 
-    if (events.mode.roundStarted && this.sites.length > 0) {
-      this.roundSiteIndex = Math.floor(this.randomness() * this.sites.length);
-    }
-
     for (const actor of this.actors) {
       if (!actor.alive) continue;
       // 功能：T 路过地面 C4 时自动拾取，与原版背包拾取一致。时间：2026-09-30；作者：lq。
@@ -563,6 +592,10 @@ export class Match {
       let command: ActorCommand;
       if (actor === this.player && playerCommand) {
         command = playerCommand;
+      } else if (this.mode.phase !== 'live') {
+        // 功能：冻结和结算阶段不推进 BOT 路点与装包计时，避免开局先跳过出生区通路。时间：2026-10-09；作者：lq。
+        command = idleCommand(actor.yaw);
+        command.pitch = actor.pitch;
       } else {
         const brain = this.brains.get(actor.id);
         if (!brain) continue;

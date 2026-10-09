@@ -20,6 +20,8 @@ import { ActorRenderer } from './engine/render/actors.ts';
 import { GrenadeRenderer } from './engine/render/grenades.ts';
 import { DroppedWeaponRenderer } from './engine/render/droppedWeapons.ts';
 import { BombRenderer } from './engine/render/bomb.ts';
+// 功能：警家原版广告墙显示可滚动的科技资讯屏。时间：2026-10-09；作者：lq。
+import { NewsScreen, findNewsScreenWall } from './engine/render/newsScreen.ts';
 import { TICK_INTERVAL, TICK_MS, TICK_RATE } from './game/constants.ts';
 import { loadMap } from './game/map/loader.ts';
 import { buildNavGraph } from './game/nav.ts';
@@ -129,6 +131,12 @@ const audio = new AudioSystem();
 // ------------------------------------------------------------ bots and rounds
 const bsp = (map as { bsp?: import('./engine/bsp/types.ts').BspFile }).bsp;
 const sites = bsp ? bombSitesFromBsp(bsp) : [];
+// 功能：仅在 Dust2 的横幅墙挂屏，其他地图保留自身场景。时间：2026-10-09；作者：lq。
+const ctSpawn = map.spawns.find((spawn) => spawn.team === 'ct');
+const screenWall = bsp && map.name === 'BSP: de_dust2' && ctSpawn ? findNewsScreenWall(bsp, ctSpawn.origin) : null;
+const newsScreen = screenWall ? new NewsScreen(renderer.scene, screenWall) : null;
+// 功能：页面离开时释放大屏资源及网络请求。时间：2026-10-09；作者：lq。
+window.addEventListener('pagehide', () => newsScreen?.dispose(), { once: true });
 
 const navStarted = performance.now();
 const graph = buildNavGraph(map.collision, map.bounds, { cellSize: 64 });
@@ -888,6 +896,8 @@ function frame(now: number): void {
   // 功能：C4 爆炸闪光在 0.38 秒内快速淡出，不遮挡下一回合。时间：2026-09-30；作者：lq。
   bombFlashOverlay.style.opacity = String(Math.max(0, (bombFlashUntil - simTime) / 0.38) * bombFlashStrength);
   effects.update(simulationActive ? dt : 0);
+  // 功能：资讯屏独立使用真实时间，暂停对局后仍可阅读和刷新新闻。时间：2026-10-09；作者：lq。
+  newsScreen?.update(performance.now() / 1000, renderer.camera);
   renderer.render();
 
   hudAccum += rawDt;

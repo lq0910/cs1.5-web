@@ -245,3 +245,13 @@ tools/                      list-maps.mjs、make-bsp.mjs
 - 光照图图集用简单 shelf packing，超大原版地图可能需要调大图集尺寸或分块。
 - 没有 VIS/PVS 剔除（原版用 BSP 可见性数据做遮挡剔除），大图帧率会受影响。
 - 原版素材由使用者自行准备；缺少对应地图、模型或音效时，相关内容无法完整显示。
+
+## Dust2 机器人与 LED 资讯屏（2026-10-09）
+
+简单难度仍然降低反应、命中率和伤害，进攻、寻路与装包执行不因难度降低而停留在出生区。导航按小步验证坡道和连续楼梯的累计爬升，每回合选择可达包点，持包队员进入装包区域后持续安装 C4。冻结时间不推进机器人任务，枪声不会反复重置包点路线，守包位置每回合固定分配。
+
+Dust2 靠近警家一侧的 GAMEHELPER 横幅墙安装实体 LED 屏，显示新闻标题轮播、来源、发布时间、同步时间和横向滚动快讯。每条新闻展示 12 秒，每 5 分钟从 IT之家科技 RSS 和 MIT 人工智能 RSS 获取更新，保留原文语言；断网标记缓存或离线并重试，不填充虚构新闻。
+
+`npm run dev` 与 `npm run preview` 均提供 `/api/tech-news`。资讯需要服务器联网；只把 `dist/` 放到纯静态服务器时，需要另外提供该同源接口或反向代理到运行此接口的服务。RSS 聚合实现位于 `server/techNews.ts`，屏幕实现位于 `src/engine/render/newsScreen.ts`。
+
+机器人设计参考：[Michael Booth 的官方 Counter-Strike Bot GDC 讲解](https://media.gdcvault.com/gdc04/slides/making_of_official.pdf)。此项目继续使用自身 TypeScript 状态机与玩家移动物理。

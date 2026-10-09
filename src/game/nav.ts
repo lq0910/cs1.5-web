@@ -129,6 +129,23 @@ const POINT_HULL_LOCAL: Hull = { mins: v3(0, 0, 0), maxs: v3(0, 0, 0) };
  * Drops are exempt from the mid-point test because the bot is in the air.
  */
 function linkReachable(world: CollisionWorld, from: Vec3, to: Vec3, dz: number): boolean {
+  // 功能：长坡和连续楼梯按小步验证爬升，避免把总高差大于一级台阶的通路切断。时间：2026-10-09；作者：lq。
+  if (dz > MAX_STEP_UP) {
+    const steps = Math.ceil(Math.hypot(to.x - from.x, to.y - from.y) / 12);
+    let current = from;
+    for (let step = 1; step <= steps; step++) {
+      const lifted = v3(current.x, current.y, current.z + 18);
+      const up = world.traceHull(HULL_STANDING, current, lifted);
+      if (up.startsolid || up.fraction < 1) return false;
+      const next = v3(from.x + (to.x - from.x) * step / steps, from.y + (to.y - from.y) * step / steps, lifted.z);
+      const across = world.traceHull(HULL_STANDING, lifted, next);
+      if (across.startsolid || across.fraction < 1) return false;
+      const down = world.traceHull(HULL_STANDING, next, v3(next.x, next.y, current.z - 24));
+      if (down.startsolid || down.fraction >= 1 || down.normal.z < 0.7) return false;
+      current = v3(down.endpos.x, down.endpos.y, down.endpos.z + 0.05);
+    }
+    return Math.abs(current.z - to.z) < 4;
+  }
   // Strongest evidence: the standing hull can sweep the whole way (lifted by the
   // step height so a staircase counts as walkable).
   const lift = Math.max(0, dz) + 2;
@@ -248,8 +265,9 @@ export function buildNavGraph(
       for (const candidate of candidates) {
         const target = nodes[candidate]!;
         const dz = target.z - node.z;
-        if (dz > MAX_STEP_UP || dz < -MAX_DROP) continue;
         const distance = Math.hypot(target.x - node.x, target.y - node.y);
+        // 功能：允许可走坡面及连续台阶的累计上升，具体可通行性仍由玩家碰撞体逐步验证。时间：2026-10-09；作者：lq。
+        if (dz > MAX_STEP_UP + distance * 0.75 || dz < -MAX_DROP) continue;
         if (distance > cellSize * 2.3) continue;
         scored.push({ index: candidate, score: Math.abs(dz) + distance * 0.01, dz });
       }
