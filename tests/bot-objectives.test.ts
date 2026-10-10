@@ -74,3 +74,97 @@ test('easy Dust2 squad plants after freeze time in the actual match loop', () =>
     assert.ok(planted, `seed ${seed}: T squad should execute bomb objective after freeze`);
   }
 });
+
+// 功能：相同出生点和包点在不同偏好下应走不同区域，且始终保持连通。时间：2026-10-10；作者：lq。
+test('round route preferences vary Dust2 corridors without losing bombsite reachability', () => {
+  for (const site of sites) {
+    const corridors = new Set<string>();
+    for (let seed = 1; seed <= 16; seed++) {
+      const path = findPath(graph, spawns[0]!.origin, site.center, 20000, seed * 73856093);
+      assert.ok(path);
+      corridors.add(path.points.map((point) => `${Math.floor(point.x / 384)},${Math.floor(point.y / 384)}`)
+        .filter((region, index, regions) => index === 0 || region !== regions[index - 1]).join('|'));
+    }
+    assert.ok(corridors.size > 1, `${site.name}: bots should choose more than one corridor sequence`);
+  }
+});
+
+// 功能：真实地图上 CT 从出生区转去拆包，多名队员不能反复抢占拆包进度。时间：2026-10-10；作者：lq。
+test('Dust2 CT squad rotates from spawn and completes one uninterrupted defuse', () => {
+  const map = { name: 'BSP: de_dust2', collision: world, bounds: bsp.models[0]!, boxes: [],
+    spawns: spawnsFromBsp(bsp), skyColor: 0, fogColor: 0 };
+  for (const seed of [5, 21, 77]) for (const site of sites) {
+    const match = new Match({ map, graph, sites, teamSize: 4, skill: 0, seed });
+    match.startNow();
+    match.mode.phase = 'live';
+    for (const actor of match.actors.filter((actor) => actor.team === 't')) actor.move.origin = { x: 50000, y: 50000, z: 36 };
+    match.mode.bomb.state = 'planted';
+    match.mode.bomb.carrier = null;
+    const node = graph.nodes.filter((node) => insideArea(site, node)).sort((a, b) => a.z - b.z)[0]!;
+    // 功能：C4 放在地面而非人物中心；测试延长倒计时以隔离长距离导航，游戏默认仍为 35 秒。时间：2026-10-10；作者：lq。
+    match.mode.bomb.position = { x: node.x, y: node.y, z: node.z - 36 };
+    match.mode.bombTimeLeft = 90;
+    let defused = false;
+    const defusers = new Set<number>();
+    for (let tick = 1; tick < 90 / TICK_INTERVAL; tick++) {
+      const events = match.update(tick * TICK_INTERVAL, idleCommand(0));
+      if (match.mode.bomb.defuser) defusers.add(match.mode.bomb.defuser.id);
+      if (events.mode.bombDefused) { defused = true; break; }
+      if (events.mode.bombExploded) break;
+    }
+    assert.ok(defused, `seed ${seed}, site ${site.name}: CT squad should rotate to the bomb and defuse`);
+    assert.equal(defusers.size, 1, 'covering teammates must not reset the active defuser');
+  }
+});
+
+// 功能：队友挤在前方时减速并横向让开，独自装包时保持静止。时间：2026-10-10；作者：lq。
+test('bots leave space for a teammate instead of marching through them', () => {
+  const node = graph.nodes[nearestNode(graph, sites[0]!.center)]!;
+  const actor = createActor({ name: 'spacing', team: 't', isBot: true, spawn: node, yaw: 0,
+    weapons: { 1: 'ak47', 2: 'glock18', 3: 'knife' }, seed: 2 });
+  const teammate = createActor({ name: 'ahead', team: 't', isBot: true,
+    spawn: { x: node.x + 40, y: node.y, z: node.z }, yaw: 0,
+    weapons: { 1: 'ak47', 2: 'glock18', 3: 'knife' }, seed: 3 });
+  const context = { world, graph, self: actor, enemies: [actor, teammate],
+    goal: { position: { x: node.x + 200, y: node.y, z: node.z }, kind: 'patrol' as const },
+    now: 1, skill: 0, canPlant: false, canDefuse: false };
+  const crowded = new BotBrain(2, node).think(TICK_INTERVAL, context);
+  const alone = new BotBrain(2, node).think(TICK_INTERVAL, { ...context, enemies: [actor] });
+  assert.ok(Math.abs(crowded.sidemove) > 0 || crowded.forwardmove < alone.forwardmove);
+  const planting = new BotBrain(2, node).think(TICK_INTERVAL, { ...context, canPlant: true });
+  assert.equal(planting.action, 'plant');
+  assert.equal(planting.sidemove, 0);
+});
+
+// 功能：默认 35 秒内验证玩家放弃拆雷后的接替，以及拆雷 BOT 阵亡后的重新分工。时间：2026-10-10；作者：lq。
+test('bots resume a released player defuse and replace a dead defuser within the normal timer', () => {
+  const map = { name: 'BSP: de_dust2', collision: world, bounds: bsp.models[0]!, boxes: [],
+    spawns: spawnsFromBsp(bsp), skyColor: 0, fogColor: 0 };
+  const match = new Match({ map, graph, sites, teamSize: 4, skill: 0, seed: 21 });
+  match.startNow();
+  match.mode.phase = 'live';
+  const node = graph.nodes.filter((node) => insideArea(sites[0]!, node)).sort((a, b) => a.z - b.z)[0]!;
+  for (const actor of match.actors) actor.move.origin = actor.team === 'ct'
+    ? { x: node.x, y: node.y, z: node.z } : { x: 50000, y: 50000, z: 36 };
+  match.mode.bomb.state = 'planted';
+  match.mode.bomb.carrier = null;
+  match.mode.bomb.position = { x: node.x, y: node.y, z: node.z - 36 };
+  match.mode.bombTimeLeft = 35;
+  match.mode.bomb.defuser = match.player;
+  match.mode.bomb.defuseProgress = 0.1;
+  let replaced = false;
+  let defused = false;
+  for (let tick = 1; tick < 35 / TICK_INTERVAL; tick++) {
+    const events = match.update(tick * TICK_INTERVAL, idleCommand(0));
+    const defuser = match.mode.bomb.defuser;
+    if (!replaced && defuser?.isBot && match.mode.bomb.defuseProgress > 0.1) {
+      defuser.alive = false;
+      defuser.health = 0;
+      replaced = true;
+    }
+    if (events.mode.bombDefused) { defused = true; break; }
+    if (events.mode.bombExploded) break;
+  }
+  assert.ok(replaced, 'a bot should take over when the player releases use');
+  assert.ok(defused, 'another bot should finish after the first defuser dies');
+});

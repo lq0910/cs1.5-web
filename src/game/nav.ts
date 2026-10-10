@@ -450,7 +450,8 @@ export interface PathResult {
  * A* over the navigation graph.
  * Returns null when no path exists between the two points.
  */
-export function findPath(graph: NavGraph, from: Vec3, to: Vec3, maxExpansions = 20000): PathResult | null {
+// 功能：可选的每人每回合区域偏好使 A* 选择不同通道，所有边权保持正值并保留可达性。时间：2026-10-10；作者：lq。
+export function findPath(graph: NavGraph, from: Vec3, to: Vec3, maxExpansions = 20000, routeSeed?: number): PathResult | null {
   const start = nearestNode(graph, from);
   const goal = nearestNode(graph, to);
   if (start < 0 || goal < 0) return null;
@@ -483,7 +484,13 @@ export function findPath(graph: NavGraph, from: Vec3, to: Vec3, maxExpansions = 
     for (let i = 0; i < node.neighbors.length; i++) {
       const next = node.neighbors[i]!;
       if (closed[next]) continue;
-      const tentative = gScore[current]! + node.costs[i]!;
+      // 功能：按空间区域生成稳定代价，避免逐帧抽签或逐节点噪声造成蛇形路线。时间：2026-10-10；作者：lq。
+      const destination = graph.nodes[next]!;
+      let region = routeSeed === undefined ? 0 : Math.imul(Math.floor(destination.x / 384), 73856093)
+        ^ Math.imul(Math.floor(destination.y / 384), 19349663) ^ routeSeed;
+      region = Math.imul(region ^ (region >>> 16), 0x45d9f3b);
+      const preference = routeSeed === undefined ? 1 : 1 + (region >>> 0) / 0x100000000 * 2.5;
+      const tentative = gScore[current]! + node.costs[i]! * preference;
       if (tentative < gScore[next]!) {
         gScore[next] = tentative;
         cameFrom[next] = current;

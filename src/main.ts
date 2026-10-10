@@ -1,7 +1,7 @@
 /**
  * Entry point: fixed 64 Hz simulation + uncapped rendering.
  *
- * The whole match (the local player, seven bots, rounds, the bomb) runs in
+ * The whole match (the local player, configurable bots, rounds, the bomb) runs in
  * game/match.ts, which the tests also drive headlessly. This file is only
  * wiring: input -> command, match events -> effects/audio/HUD.
  */
@@ -27,6 +27,8 @@ import { loadMap } from './game/map/loader.ts';
 import { buildNavGraph } from './game/nav.ts';
 import { bombSitesFromBsp } from './game/objectives.ts';
 import { Match } from './game/match.ts';
+// 功能：共享机器人默认数量、地图容量及安全设置解析。时间：2026-10-10；作者：lq。
+import { mapTeamSizeLimit, parseMatchSettings, settingNumber, teamSizeForBots } from './game/matchSettings.ts';
 import { spectatorCameraPose } from './game/spectator.ts';
 import type { GrenadeKind } from './game/match.ts';
 import { BUY_MENU, DEFUSE_RADIUS, buyMenuOptions } from './game/gamemode.ts';
@@ -70,7 +72,11 @@ const bombFlashOverlay = must('bombflash');
 
 const params = new URLSearchParams(window.location.search);
 // 功能：URL 保存当前阵营；M 键打开选队面板后可在 CT/T 间重新加入。时间：2026-09-29；作者：lq。
-const playerTeam = params.get('team') === 't' ? 't' : 'ct';
+// 功能：读入持久化设置；浏览器禁用存储时仍可正常开始游戏。时间：2026-10-10；作者：lq。
+let savedSettings = parseMatchSettings(null);
+try { savedSettings = parseMatchSettings(localStorage.getItem('cs15-settings')); }
+catch { /* 功能：存储不可用时使用默认 5V5。时间：2026-10-10；作者：lq。 */ }
+const playerTeam = params.has('team') ? (params.get('team') === 't' ? 't' : 'ct') : savedSettings.team;
 /** ?debug=1 keeps the physics read-out on screen; off by default so the HUD can
  * look like the original game. */
 const debug = params.has('debug');
@@ -143,12 +149,15 @@ const graph = buildNavGraph(map.collision, map.bounds, { cellSize: 64 });
 const navMs = Math.round(performance.now() - navStarted);
 
 // 功能：缺少 skill 参数时保留默认 BOT 难度，避免 Number(null) 把难度误设为零。时间：2026-09-29；作者：lq。
-const skillParam = params.has('skill') ? Number(params.get('skill')) : NaN;
+const skillParam = settingNumber(params.get('skill'), savedSettings.skill);
+// 功能：实际人数与设置上限使用同一规则，URL 不能绕过地图容量。时间：2026-10-10；作者：lq。
+const teamSizeLimit = mapTeamSizeLimit(map.spawns);
+const teamSize = teamSizeForBots(params.get('bots') ?? savedSettings.bots, teamSizeLimit);
 const match = new Match({
   map,
   graph,
   sites,
-  teamSize: 4,
+  teamSize,
   playerTeam,
   // 功能：未指定参数时使用简单 BOT 难度，保留 URL 参数覆盖能力。时间：2026-09-29；作者：lq。
   skill: Number.isFinite(skillParam) ? Math.max(0, Math.min(1, skillParam)) : 0.15,
@@ -156,7 +165,7 @@ const match = new Match({
   seed: Math.floor(Math.random() * 0xffffffff),
 });
 const playerActor = match.player!;
-// 功能：选队按钮显示当前阵营；切换阵营时重新建立平衡的 4v4 对局。时间：2026-09-29；作者：lq。
+// 功能：选队按钮显示当前阵营；切换阵营时保留当前人数并重新建立平衡对局。时间：2026-10-10；作者：lq。
 for (const team of ['ct', 't'] as const) {
   const button = must<HTMLButtonElement>(`team-${team}`);
   button.classList.toggle('selected', team === playerTeam);
@@ -170,6 +179,51 @@ for (const team of ['ct', 't'] as const) {
     window.location.assign(url.href);
   });
 }
+
+// 功能：设置面板显示生效人数及容量；滑块按两名机器人递增以保持双方平衡。时间：2026-10-10；作者：lq。
+function initializeMatchSettings(): void {
+  const bots = document.getElementById('setting-bots') as HTMLInputElement | null;
+  if (!bots) return;
+  const team = must<HTMLSelectElement>('setting-team');
+  const skill = must<HTMLSelectElement>('setting-skill');
+  team.value = playerTeam;
+  // 功能：URL 自定义难度也完整回显，避免打开设置后悄悄改成简单。时间：2026-10-10；作者：lq。
+  const difficulty = Math.max(0, Math.min(1, skillParam));
+  if (![...skill.options].some((option) => Number(option.value) === difficulty)) {
+    skill.add(new Option(`自定义（${difficulty}）`, String(difficulty)));
+  }
+  skill.value = String(difficulty);
+  bots.min = '1';
+  bots.max = String(teamSizeLimit * 2 - 1);
+  bots.step = '2';
+  bots.value = String(teamSize * 2 - 1);
+  bots.disabled = teamSizeLimit === 1;
+  const updateCount = (): void => {
+    const size = teamSizeForBots(bots.value, teamSizeLimit);
+    must('setting-bots-value').textContent = `${size * 2 - 1} 个机器人 · ${size}V${size}（含你）`;
+  };
+  bots.addEventListener('input', updateCount);
+  updateCount();
+  must('setting-bots-limit').textContent = `当前地图最多 ${teamSizeLimit}V${teamSizeLimit}；为控制性能开销，最多开放到 6V6。双方人数平衡。`;
+  must<HTMLButtonElement>('apply-match-settings').disabled = false;
+}
+window.addEventListener('cs15-open-settings', initializeMatchSettings);
+initializeMatchSettings();
+// 功能：应用设置后重新建立对局，保存选择且保留当前地图；存储不可用时用 URL 生效。时间：2026-10-10；作者：lq。
+document.addEventListener('click', (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement) || !target.closest('[data-apply-settings]')) return;
+  const size = teamSizeForBots(must<HTMLInputElement>('setting-bots').value, teamSizeLimit);
+  const settings = { version: 2, team: must<HTMLSelectElement>('setting-team').value,
+    skill: must<HTMLSelectElement>('setting-skill').value, bots: size * 2 - 1 };
+  try { localStorage.setItem('cs15-settings', JSON.stringify(settings)); }
+  catch { /* 功能：URL 保证设置在当前重新开局时仍生效。时间：2026-10-10；作者：lq。 */ }
+  const url = new URL(window.location.href);
+  url.searchParams.set('team', settings.team);
+  url.searchParams.set('skill', settings.skill);
+  url.searchParams.set('bots', String(settings.bots));
+  window.location.assign(url.href);
+});
 
 // Debug placement so a reported viewpoint can be reproduced exactly:
 //   ?pos=x,y,z&yaw=degrees
@@ -381,7 +435,8 @@ pauseExitButton.addEventListener('click', () => {
 const menuToast = document.getElementById('menu-toast');
 const menuLabels: Record<string, string> = {
   servers: '服务器列表正在准备中',
-  create: '创建房间：本地 4v4 房间已就绪',
+  // 功能：房间提示回显当前实际人数。时间：2026-10-10；作者：lq。
+  create: `创建房间：本地 ${teamSize}V${teamSize} 房间已就绪`,
   settings: '游戏设置可在对局中按 Esc 调整',
   ranking: '排行榜：本周最佳 CT_Fan001',
   help: '帮助：点击快速开始进入训练对局',
@@ -429,7 +484,8 @@ noMapNotice.innerHTML = [
   loaded.note,
   `导航图 ${graph.nodes.length} 个节点（${navMs} ms）· 炸弹点 ${sites.length} 个`,
   '',
-  `4v4：你是 ${playerTeam.toUpperCase()}，3 个 BOT 队友，对面 4 个 BOT。按 M 可切换阵营。`,
+  // 功能：地图说明显示实际生效的队伍人数。时间：2026-10-10；作者：lq。
+  `${teamSize}V${teamSize}：你是 ${playerTeam.toUpperCase()}，${teamSize - 1} 个 BOT 队友，对面 ${teamSize} 个 BOT。按 M 可切换阵营。`,
   '换地图 <code>?map=de_dust2</code>，BOT 强度 <code>?skill=0.9</code>。',
 ].join('<br>');
 

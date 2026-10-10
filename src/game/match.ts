@@ -1,5 +1,5 @@
 /**
- * Match runner: the whole 4v4 round loop, headless.
+ * Match runner: the configurable round loop, headless.
  *
  * Both the browser game and the tests drive this one class. That is deliberate:
  * a bot-vs-bot match can then be simulated in Node, which is the only practical
@@ -19,7 +19,7 @@ import { v3 } from '../engine/math.ts';
 import type { CollisionWorld } from '../engine/collision/types.ts';
 import type { MapData } from './map/build.ts';
 import type { NavGraph } from './nav.ts';
-import { findPath, nearestNode, randomNodeNear } from './nav.ts';
+import { findPath, nearestNode } from './nav.ts';
 import type { ObjectiveArea } from './objectives.ts';
 // 功能：包点目标必须处于真实装包触发区域内。时间：2026-10-09；作者：lq。
 import { insideArea } from './objectives.ts';
@@ -39,6 +39,8 @@ import type { RoundEvents } from './gamemode.ts';
 import { BotBrain } from './bots.ts';
 import type { BotGoal } from './bots.ts';
 import { WEAPONS } from './weapons.ts';
+// 功能：默认 5V5 在小容量地图自动缩减，显式人数供内部模拟测试使用。时间：2026-10-10；作者：lq。
+import { DEFAULT_TEAM_SIZE, mapTeamSizeLimit } from './matchSettings.ts';
 // 功能：对局模拟使用原版手雷投掷与物理参数。时间：2026-09-30；作者：lq。
 import { grenadeLaunch, heDamage, GRENADE_GRAVITY, GRENADE_FRICTION, GRENADE_FUSE } from './grenades.ts';
 import type { WeaponId } from './weapons.ts';
@@ -169,6 +171,12 @@ export class Match {
   private roundSiteIndex = 0;
   /** 功能：每个队员固定守包位置，避免每帧随机目标导致反复转向。时间：2026-10-09；作者：lq。 */
   private readonly guardGoals = new Map<number, Vec3>();
+  /** 功能：每人独立的开局任务和巡逻更新时刻；回合内保持目标稳定。时间：2026-10-10；作者：lq。 */
+  private readonly advanceGoals = new Map<number, BotGoal>();
+  private readonly patrolUntil = new Map<number, number>();
+  /** 功能：只指定一名捡包者和拆包者，死亡后再选继任者。时间：2026-10-10；作者：lq。 */
+  private bombRetriever: Actor | null = null;
+  private bombDefuser: Actor | null = null;
 
   constructor(options: MatchOptions) {
     this.world = options.map.collision;
@@ -178,7 +186,8 @@ export class Match {
     this.skill = options.skill ?? 0.15;
     // 功能：简单难度 BOT 造成约 45% 武器伤害，最高难度恢复 100% 伤害。时间：2026-10-05；作者：lq。
     this.botDamageMultiplier = 0.35 + this.skill * 0.65;
-    this.teamSize = options.teamSize ?? 4;
+    // 功能：默认采用 5V5 并遵守地图容量，浏览器传入的人数已统一校验。时间：2026-10-10；作者：lq。
+    this.teamSize = options.teamSize ?? Math.min(DEFAULT_TEAM_SIZE, mapTeamSizeLimit(options.map.spawns));
 
     let seed = options.seed ?? 12345;
     this.randomness = () => {
@@ -317,13 +326,29 @@ export class Match {
   /** 功能：新回合选择可达进攻包点并清空旧路线和守包位置，难度只调整战斗能力。时间：2026-10-09；作者：lq。 */
   private prepareBotRound(): void {
     this.guardGoals.clear();
+    // 功能：回合开始清除旧任务与交互负责人。时间：2026-10-10；作者：lq。
+    this.advanceGoals.clear();
+    this.patrolUntil.clear();
+    this.bombRetriever = null;
+    this.bombDefuser = null;
     const carrier = this.mode.bomb.carrier;
     const reachable = this.siteGoals.map((position, index) => ({ position, index }))
       .filter(({ position }) => !this.graph || !carrier || findPath(this.graph, carrier.move.origin, position));
     this.roundSiteIndex = reachable.length > 0
       ? reachable[Math.floor(this.randomness() * reachable.length)]!.index : 0;
     for (const actor of this.actors) {
-      if (actor.isBot) this.brains.set(actor.id, new BotBrain(Math.floor(this.randomness() * 0xffffff), actor.move.origin));
+      if (!actor.isBot) continue;
+      // 功能：持包者主攻随机包点，队员分散掩护或从另一个包点进攻，CT 随机向匪家推进。时间：2026-10-10；作者：lq。
+      this.brains.set(actor.id, new BotBrain(Math.floor(this.randomness() * 0xffffff), actor.move.origin));
+      const selectedSite = actor === carrier || this.randomness() < 0.7 ? this.roundSiteIndex
+        : Math.floor(this.randomness() * this.siteGoals.length);
+      const destination = actor.team === 'ct'
+        ? this.spawns.t[Math.floor(this.randomness() * this.spawns.t.length)]!
+        : this.siteGoals[selectedSite] ?? this.spawns.ct[0]!;
+      this.advanceGoals.set(actor.id, {
+        position: actor === carrier ? destination : this.spreadGoal(actor, destination, actor.team === 'ct' ? 360 : 240),
+        kind: actor === carrier ? 'site' : 'patrol',
+      });
     }
   }
 
@@ -423,51 +448,74 @@ export class Match {
     }
   }
 
-  /**
-   * Bot goal for the current round state.
-   *
-   * The site choice is made *once per round* (see roundSiteIndex): picking a
-   * random site every tick makes the bomb carrier oscillate between A and B and
-   * the terrorists never commit, which showed up as a 6-0 CT sweep.
-   */
-  private goalFor(actor: Actor): BotGoal | null {
+  /** 功能：选可达的分散站位，优先与已分配队员相隔 100 单位，避免同坐标排队。时间：2026-10-10；作者：lq。 */
+  private spreadGoal(actor: Actor, position: Vec3, radius: number): Vec3 {
+    const graph = this.graph;
+    if (!graph) return v3(position.x, position.y, position.z);
+    const candidates = graph.nodes.filter((node) => Math.hypot(node.x - position.x, node.y - position.y) <= radius
+      && Math.abs(node.z - position.z) < 96);
+    for (let attempt = 0; attempt < 18 && candidates.length; attempt++) {
+      const picked = candidates.splice(Math.floor(this.randomness() * candidates.length), 1)[0]!;
+      const assigned = [...this.guardGoals.values(), ...[...this.advanceGoals.values()].map((goal) => goal.position)];
+      if (assigned.some((goal) => Math.hypot(goal.x - picked.x, goal.y - picked.y) < 100)) continue;
+      if (findPath(graph, actor.move.origin, picked)) return v3(picked.x, picked.y, picked.z);
+    }
+    return v3(position.x, position.y, position.z);
+  }
+
+  /** 功能：挑选可到达 C4 的最近队员，拆包时适当优先带钳者；不抢占人类玩家操作。时间：2026-10-10；作者：lq。 */
+  private closestBombBot(team: Team): Actor | null {
+    const position = this.mode.bomb.position;
+    if (!position) return null;
+    return this.actors.filter((actor) => actor.alive && actor.isBot && actor.team === team)
+      .map((actor) => ({ actor, path: this.graph ? findPath(this.graph, actor.move.origin, position) : null }))
+      .filter(({ path }) => !this.graph || path)
+      .sort((a, b) => {
+        const cost = (entry: typeof a): number => (entry.path?.cost ?? Math.hypot(entry.actor.move.origin.x - position.x,
+          entry.actor.move.origin.y - position.y)) - (team === 'ct' && entry.actor.hasDefuseKit ? 250 : 0);
+        return cost(a) - cost(b);
+      })[0]?.actor ?? null;
+  }
+
+  /** 功能：按 C4 状态分配进攻、回收、守包、拆包任务，目标只在事件或巡逻到达后改变。时间：2026-10-10；作者：lq。 */
+  private goalFor(actor: Actor, now: number): BotGoal | null {
     const mode = this.mode;
     const target = this.siteGoals[this.roundSiteIndex] ?? this.siteGoals[0] ?? null;
-
-    /** A walkable spot near a world position (falls back to the position). */
-    const near = (position: Vec3, radius: number): Vec3 => {
-      if (!this.graph) return position;
-      const node = randomNodeNear(this.graph, position, radius, this.randomness);
-      if (node < 0) return position;
-      const picked = this.graph.nodes[node]!;
-      return v3(picked.x, picked.y, picked.z);
-    };
-
     if (actor.team === 't') {
-      // 功能：C4 掉落时队员先回收背包，再继续进攻包点。时间：2026-09-30；作者：lq。
-      if (mode.bomb.state === 'dropped' && mode.bomb.position) return { position: mode.bomb.position, kind: 'bomb' };
+      if (mode.bomb.state === 'dropped' && mode.bomb.position) {
+        if (!this.bombRetriever?.alive) this.bombRetriever = this.closestBombBot('t');
+        if (actor === this.bombRetriever) return { position: mode.bomb.position, kind: 'bomb' };
+      }
+      if (mode.bomb.state === 'carried' && mode.bomb.carrier === actor) {
+        return target ? { position: target, kind: 'site' } : null;
+      }
       if (mode.bomb.state === 'planted' && mode.bomb.position) {
-        // 功能：守包点每回合只分配一次，并校验可达性，减少队员原地来回转悠。时间：2026-10-09；作者：lq。
-        if (!this.guardGoals.has(actor.id)) {
-          const picked = near(mode.bomb.position, 360);
-          this.guardGoals.set(actor.id, !this.graph || findPath(this.graph, actor.move.origin, picked)
-            ? picked : actor.move.origin);
-        }
+        if (!this.guardGoals.has(actor.id)) this.guardGoals.set(actor.id, this.spreadGoal(actor, mode.bomb.position, 360));
         return { position: this.guardGoals.get(actor.id)!, kind: 'patrol' };
       }
-      // Everyone escorts the carrier to the chosen site.
-      return target ? { position: target, kind: 'site' } : null;
+    } else if (mode.bomb.state === 'planted' && mode.bomb.position) {
+      // 功能：保留正在拆包的玩家或 BOT，否则只让指定队员接近交互点，其余 CT 分散掩护。时间：2026-10-10；作者：lq。
+      if (mode.bomb.defuser?.alive) this.bombDefuser = mode.bomb.defuser;
+      else if (!this.bombDefuser?.alive || !this.bombDefuser.isBot) this.bombDefuser = this.closestBombBot('ct');
+      if (actor === this.bombDefuser) return { position: mode.bomb.position, kind: 'defuse' };
+      if (!this.guardGoals.has(actor.id)) this.guardGoals.set(actor.id, this.spreadGoal(actor, mode.bomb.position, 280));
+      return { position: this.guardGoals.get(actor.id)!, kind: 'patrol' };
     }
-
-    if (mode.bomb.state === 'planted' && mode.bomb.position) {
-      // 功能：CT 直接接近 C4，取消每帧随机的拆包目标。时间：2026-10-09；作者：lq。
-      return { position: mode.bomb.position, kind: 'defuse' };
+    let goal = this.advanceGoals.get(actor.id) ?? null;
+    // 功能：抵达巡逻点后短暂停留并重新随机搜索，CT 不会到匪家后永久站桩。时间：2026-10-10；作者：lq。
+    if (goal && Math.hypot(actor.move.origin.x - goal.position.x, actor.move.origin.y - goal.position.y) < 64
+      && Math.abs(actor.move.origin.z - goal.position.z) < 48) {
+      if (!this.patrolUntil.has(actor.id)) this.patrolUntil.set(actor.id, now + 1 + this.randomness() * 3);
+      if (now >= this.patrolUntil.get(actor.id)!) {
+        const destination = actor.team === 'ct' && this.randomness() < 0.5
+          ? this.spawns.t[Math.floor(this.randomness() * this.spawns.t.length)]!
+          : this.siteGoals[Math.floor(this.randomness() * this.siteGoals.length)] ?? this.spawns.ct[0]!;
+        goal = { position: this.spreadGoal(actor, destination, 320), kind: 'patrol' };
+        this.advanceGoals.set(actor.id, goal);
+        this.patrolUntil.delete(actor.id);
+      }
     }
-    // CTs split between the sites, holding angles.
-    if (this.siteGoals.length > 1) {
-      return { position: this.siteGoals[actor.id % this.siteGoals.length]!, kind: 'site' };
-    }
-    return target ? { position: target, kind: 'site' } : null;
+    return goal;
   }
 
   /** 功能：存活玩家在 128 单位内对墙地喷漆，空中、实体内部和冷却期不生成贴花。时间：2026-09-30；作者：lq。 */
@@ -604,7 +652,7 @@ export class Match {
           graph: this.graph,
           self: actor,
           enemies: this.actors,
-          goal: this.goalFor(actor),
+          goal: this.goalFor(actor, now),
           now,
           skill: this.skill,
           canPlant:
@@ -614,11 +662,13 @@ export class Match {
             this.mode.bombsiteAt(actor.move.origin) !== null,
           canDefuse:
             actor.team === 'ct' &&
+            this.bombDefuser === actor &&
             this.mode.bomb.state === 'planted' &&
             this.mode.bomb.position !== null &&
             Math.hypot(
               actor.move.origin.x - this.mode.bomb.position.x,
               actor.move.origin.y - this.mode.bomb.position.y,
+              actor.move.origin.z - this.mode.bomb.position.z,
             ) < 64,
         });
         actor.yaw = brainCommand.yaw;

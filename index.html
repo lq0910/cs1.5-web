@@ -229,7 +229,8 @@
 
   /* 功能：主菜单弹窗的深色战术面板与表单样式。时间：2026-10-01；作者：lq。 */
   .menu-modal[hidden] { display: none !important; }
-  .menu-modal { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; color: #e5e7eb; font-family: inherit; }
+  /* 功能：设置弹窗位于暂停菜单上方，可在 Esc 菜单中调整人数。时间：2026-10-10；作者：lq。 */
+  .menu-modal { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; color: #e5e7eb; font-family: inherit; }
   .menu-modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.68); backdrop-filter: blur(5px); }
   .menu-modal-card { position: relative; width: min(640px, calc(100vw - 32px)); max-height: min(720px, calc(100vh - 48px)); overflow: auto; padding: 26px 30px 30px; border: 1px solid rgba(234,179,8,.55); border-radius: 8px; background: linear-gradient(145deg, rgba(20,27,35,.98), rgba(7,11,16,.98)); box-shadow: 0 22px 70px rgba(0,0,0,.65), inset 0 0 28px rgba(234,179,8,.05); }
   .menu-modal-card h2 { margin: 0 0 18px; color: #facc15; font-size: 22px; letter-spacing: .08em; }
@@ -586,6 +587,8 @@
     <p>对局状态已冻结，选择继续即可回到当前回合。</p>
     <div class="pause-actions">
       <button id="resumeBtn" class="primary" type="button">继续游戏</button>
+      <!-- 功能：暂停时直接进入机器人数量与难度设置。时间：2026-10-10；作者：lq。 -->
+      <button type="button" data-menu="settings">游戏设置</button>
       <button id="pauseExitBtn" type="button">返回主菜单</button>
     </div>
   </section>
@@ -621,7 +624,7 @@
           },
           settings: {
             title: '游戏设置 / SETTINGS',
-            body: `<div class="setting-row"><label for="setting-team">玩家阵营</label><select id="setting-team"><option value="ct">反恐精英 CT</option><option value="t">恐怖分子 T</option></select></div><div class="setting-row"><label for="setting-skill">机器人难度</label><select id="setting-skill"><option value="0.15">简单</option><option value="0.45">普通</option><option value="0.75">困难</option><option value="0.95">专家</option></select></div><div class="setting-row"><label for="setting-bots">机器人数量</label><input id="setting-bots" type="range" min="1" max="7" value="3" /></div><div class="menu-modal-actions"><button data-close-modal>取消</button><button class="primary" data-apply-settings>应用设置</button></div>`
+            body: `<div class="setting-row"><label for="setting-team">玩家阵营</label><select id="setting-team"><option value="ct">反恐精英 CT</option><option value="t">恐怖分子 T</option></select></div><div class="setting-row"><label for="setting-skill">机器人难度</label><select id="setting-skill"><option value="0.15">简单</option><option value="0.45">普通</option><option value="0.75">困难</option><option value="0.95">专家</option></select></div><!-- 功能：回显机器人总数与地图容量，加载完地图后开放设置。时间：2026-10-10；作者：lq。 --><div class="setting-row"><label for="setting-bots">机器人数量</label><div><input id="setting-bots" type="range" min="1" max="9" step="2" value="9" disabled /><output id="setting-bots-value" for="setting-bots">地图加载中…</output></div></div><p id="setting-bots-limit" style="color:#aab6be;font-size:13px">人数上限按地图容量自动调整。</p><div class="menu-modal-actions"><button data-close-modal>取消</button><button id="apply-match-settings" class="primary" data-apply-settings disabled>应用并重新开局</button></div>`
           },
           lan: {
             title: '局域网服务器 / LAN SERVERS',
@@ -632,6 +635,8 @@
         modalTitle.textContent = content.title;
         modalBody.innerHTML = content.body;
         modal.hidden = false;
+        // 功能：通知游戏模块按当前地图容量和实际设置初始化控件。时间：2026-10-10；作者：lq。
+        if (kind === 'settings') window.dispatchEvent(new Event('cs15-open-settings'));
       };
       const closeModal = () => { if (modal) modal.hidden = true; };
       document.querySelectorAll('[data-menu="help"], [data-menu="settings"], [data-menu="lan"]').forEach((item) => item.addEventListener('click', (event) => {
@@ -640,14 +645,8 @@
       }));
       document.querySelectorAll('[data-close-modal]').forEach((item) => item.addEventListener('click', closeModal));
       document.addEventListener('click', (event) => {
-        const target = event.target;
-        if (target instanceof HTMLElement && target.matches('[data-apply-settings]')) {
-          const team = document.getElementById('setting-team')?.value ?? 'ct';
-          const skill = document.getElementById('setting-skill')?.value ?? '0.15';
-          const bots = document.getElementById('setting-bots')?.value ?? '3';
-          localStorage.setItem('cs15-settings', JSON.stringify({ team, skill, bots }));
-          closeModal();
-        }
+        // 功能：动态生成的取消按钮通过事件委托关闭弹窗，设置应用由游戏模块处理。时间：2026-10-10；作者：lq。
+        if (event.target instanceof HTMLElement && event.target.closest('[data-close-modal]')) closeModal();
       });
       // Audio click effect simulation
       const buttons = document.querySelectorAll('button, a');

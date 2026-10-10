@@ -67,7 +67,8 @@ export interface BotCommand {
   action: 'none' | 'plant' | 'defuse';
 }
 
-const FOV_COS = Math.cos((100 * Math.PI) / 180); // half-angle, degrees
+// 功能：使用 110 度前方视野，近距离仍可察觉身后敌人。时间：2026-10-10；作者：lq。
+const FOV_COS = Math.cos((55 * Math.PI) / 180);
 const MAX_VIEW_DISTANCE = 3200;
 // 功能：降低 BOT 转身角速度，避免导航路点切换时高速原地旋转。时间：2026-09-30；作者：lq。
 const TURN_RATE_DEG = 240;
@@ -95,6 +96,8 @@ function normalizeAngle(degrees: number): number {
 export class BotBrain {
   state: BotState = 'idle';
   private readonly random: () => number;
+  /** 功能：保存本回合独立通道偏好，重规划仍保持自然连续的路线。时间：2026-10-10；作者：lq。 */
+  private readonly routeSeed: number;
   private path: PathResult | null = null;
   private pathIndex = 0;
   private repathAt = 0;
@@ -127,6 +130,8 @@ export class BotBrain {
 
   constructor(seed: number, start: Vec3) {
     this.random = mulberry32(seed);
+    // 功能：不同机器人和回合使用不同区域偏好。时间：2026-10-10；作者：lq。
+    this.routeSeed = seed;
     this.lastPosition = v3(start.x, start.y, start.z);
   }
 
@@ -258,7 +263,27 @@ export class BotBrain {
       command.pitch += Math.max(-maxStep, Math.min(maxStep, deltaPitch));
     };
 
-    if (this.target) {
+    // ---- objectives
+    if (context.canPlant && (!this.target || bestDistance > 600)) {
+      this.state = 'plant';
+      command.state = 'plant';
+      command.action = 'plant';
+      command.forwardmove = 0;
+      command.sidemove = 0;
+      return this.finish(command, context, now, dt);
+    }
+    if (context.canDefuse && (!this.target || bestDistance > 600)) {
+      this.state = 'defuse';
+      command.state = 'defuse';
+      command.action = 'defuse';
+      command.forwardmove = 0;
+      command.sidemove = 0;
+      return this.finish(command, context, now, dt);
+    }
+
+    // 功能：持包者和拆包者不因远处敌人永久停下，近距离遭遇仍先自卫。时间：2026-10-10；作者：lq。
+    const urgentObjective = context.goal?.kind === 'defuse' || context.goal?.kind === 'site';
+    if (this.target && !(urgentObjective && bestDistance > 900)) {
       // Aim error shrinks the longer the bot holds the aim on the target.
       const settle = Math.min(1, (now - this.targetSeenAt) / 0.6);
       const errorScale = (1 - context.skill * 0.85) * 3.4 * (1 - settle * 0.7);
@@ -310,25 +335,7 @@ export class BotBrain {
       // 功能：第三人称原版玩家模型只有前进步态，交火时取消大幅侧移，避免枪口朝向与脚步方向不一致产生飘移感。时间：2026-09-30；作者：lq。
       command.sidemove = 0;
       void this.strafeDirection;
-      return this.finish(command, self, now, dt);
-    }
-
-    // ---- objectives
-    if (context.canPlant) {
-      this.state = 'plant';
-      command.state = 'plant';
-      command.action = 'plant';
-      command.forwardmove = 0;
-      command.sidemove = 0;
-      return this.finish(command, self, now, dt);
-    }
-    if (context.canDefuse) {
-      this.state = 'defuse';
-      command.state = 'defuse';
-      command.action = 'defuse';
-      command.forwardmove = 0;
-      command.sidemove = 0;
-      return this.finish(command, self, now, dt);
+      return this.finish(command, context, now, dt);
     }
 
     // ---- navigation
@@ -359,11 +366,14 @@ export class BotBrain {
         this.repathAt = 0;
       }
       // 功能：持包、捡包和拆包必须走到交互范围内，不能在距离目标 200 单位处停步。时间：2026-10-09；作者：lq。
-      const arrivalRadius = context.goal?.kind === 'patrol' ? 120 : 24;
+      // 功能：巡逻也靠近独立站位再停步，避免多个队员在同一入口提前站住。时间：2026-10-10；作者：lq。
+      const arrivalRadius = context.goal?.kind === 'patrol' ? 64 : 24;
       this.lastGoalDistance = Math.hypot(goalPosition.x - self.move.origin.x, goalPosition.y - self.move.origin.y);
       this.arrived = this.lastGoalDistance < arrivalRadius && Math.abs(goalPosition.z - self.move.origin.z) < 48;
       if (!this.arrived && (goalChanged || now >= this.repathAt)) {
-        this.path = context.graph ? findPath(context.graph, self.move.origin, goalPosition) : null;
+        // 功能：拆雷倒计时阶段走最快路线，平时进攻才使用随机通道偏好。时间：2026-10-10；作者：lq。
+        this.path = context.graph ? findPath(context.graph, self.move.origin, goalPosition, 20000,
+          context.goal?.kind === 'defuse' ? undefined : this.routeSeed) : null;
         // 功能：可直达的最后一段补到真实交互位置，避免网格取整后停在 C4 拾取范围外。时间：2026-10-09；作者：lq。
         const end = this.path?.points.at(-1);
         if (end && Math.abs(end.z - goalPosition.z) < 48 && context.world.traceHull(
@@ -372,8 +382,8 @@ export class BotBrain {
         this.pathIndex = 0;
         this.waypointSince = now;
         this.waypointSkips = 0;
-        // 功能：给门洞路点留出通过和脱困时间，连续路线不被短周期重规划打断。时间：2026-10-09；作者：lq。
-        this.repathAt = now + 12 + this.random() * 2;
+        // 功能：有效路线一直走完，仅目标变化、脱困或路点耗尽时重算，避免定时回头拖慢拆雷。时间：2026-10-10；作者：lq。
+        this.repathAt = Infinity;
         this.arrived = false;
 
         if (!this.path) {
@@ -455,6 +465,8 @@ export class BotBrain {
           command.buttons |= IN_FORWARD;
         }
       } else {
+        // 功能：路点耗尽但尚未到达交互位置时重新寻路，避免永远站在 C4 附近。时间：2026-10-10；作者：lq。
+        if (!this.arrived) this.repathAt = 0;
         // 功能：无路点时保持当前朝向，避免 BOT 原地持续转圈。时间：2026-09-30；作者：lq。
         command.state = 'idle';
         this.state = 'idle';
@@ -495,10 +507,36 @@ export class BotBrain {
     }
 
     this.lastPosition = v3(self.move.origin.x, self.move.origin.y, self.move.origin.z);
-    return this.finish(command, self, now, dt);
+    return this.finish(command, context, now, dt);
   }
 
-  private finish(command: BotCommand, self: Actor, now: number, dt: number): BotCommand {
+  private finish(command: BotCommand, context: BotContext, now: number, dt: number): BotCommand {
+    const self = context.self;
+    // 功能：队友间留出身体间距，前方拥堵时减速并向可通行一侧避让，装拆包不受干扰。时间：2026-10-10；作者：lq。
+    if (command.action === 'none') {
+      const yaw = command.yaw * Math.PI / 180;
+      let separation = 0;
+      for (const teammate of context.enemies) {
+        if (teammate === self || !teammate.alive || teammate.team !== self.team) continue;
+        const dx = teammate.move.origin.x - self.move.origin.x;
+        const dy = teammate.move.origin.y - self.move.origin.y;
+        const distance = Math.hypot(dx, dy);
+        if (distance > 100 || Math.abs(teammate.move.origin.z - self.move.origin.z) > 48) continue;
+        const ahead = dx * Math.cos(yaw) + dy * Math.sin(yaw);
+        const right = dx * Math.sin(yaw) - dy * Math.cos(yaw);
+        if (ahead > 0 && Math.abs(right) < 36 && command.forwardmove > 0) command.forwardmove *= 0.35;
+        if (distance < 72) separation += (Math.abs(right) < 4 ? (self.id < teammate.id ? -1 : 1) : -Math.sign(right)) * (72 - distance) * 3;
+      }
+      if (Math.abs(separation) > 1) {
+        const side = Math.max(-160, Math.min(160, separation));
+        const end = v3(self.move.origin.x + Math.sin(yaw) * Math.sign(side) * 24,
+          self.move.origin.y - Math.cos(yaw) * Math.sign(side) * 24, self.move.origin.z + 2);
+        if (context.world.traceHull(HULL_STANDING, v3(self.move.origin.x, self.move.origin.y, self.move.origin.z + 2), end).fraction === 1) {
+          command.sidemove = side;
+          command.buttons |= side > 0 ? IN_MOVERIGHT : IN_MOVELEFT;
+        }
+      }
+    }
     // 功能：进攻时正常跑步，交火时慢走；避免所有难度都以步行速度耗完回合。时间：2026-10-09；作者：lq。
     if (command.state === 'engage' && (command.forwardmove !== 0 || command.sidemove !== 0)) command.buttons |= IN_WALK;
     this.lastPosition = v3(self.move.origin.x, self.move.origin.y, self.move.origin.z);
