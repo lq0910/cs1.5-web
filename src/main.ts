@@ -1024,8 +1024,8 @@ function frame(now: number): void {
   effects.update(simulationActive ? dt : 0);
   // 功能：资讯屏独立使用真实时间，暂停对局后仍可阅读和刷新新闻。时间：2026-10-09；作者：lq。
   newsScreen?.update(performance.now() / 1000, renderer.camera);
-  // 功能：直播使用真实时钟，游戏暂停不会把新闻直播变为录像。时间：2026-10-21；作者：lq。
-  liveScreen?.update(performance.now() / 1000);
+  // 功能：玩家看见附近大屏时才加载有声直播，暂停、遮挡和离开视野立即停止。时间：2026-10-21；作者：lq。
+  liveScreen?.update(performance.now() / 1000, renderer.camera, map.collision, gameStarted && !gamePaused, audio.volume);
   renderer.render();
 
   hudAccum += rawDt;

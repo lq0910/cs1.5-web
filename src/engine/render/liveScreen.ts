@@ -1,8 +1,10 @@
-/** 功能：在 Dust2 匪家坡道长墙挂载 CCTV13 直播屏，免登录静音自动播放。时间：2026-10-21；作者：lq。 */
+/** 功能：在 Dust2 匪家坡道长墙挂载 CCTV13 直播屏，可见时按需加载并有声播放。时间：2026-10-21；作者：lq。 */
 import * as THREE from 'three';
 import type Hls from 'hls.js';
 import type { BspFile } from '../bsp/types.ts';
 import type { ScreenPlacement } from './newsScreen.ts';
+import type { CollisionWorld } from '../collision/types.ts';
+import { canSeeScreen, LIVE_SCREEN_DISTANCE } from './screenVisibility.ts';
 import { toThree } from './boxGeometry.ts';
 
 /** 功能：采用已验证清单、分片、跨域与真实画面的公开转播地址；不保存会过期的 CDN 子地址。时间：2026-10-21；作者：lq。 */
@@ -28,16 +30,21 @@ export class LiveScreen {
   private hls: Hls | null = null;
   private disposed = false;
   private connecting = false;
+  /** 功能：可见性与连接代次阻止离开后异步请求重新启动直播。时间：2026-10-21；作者：lq。 */
+  private active = false;
+  private generation = 0;
+  private readonly placement: ScreenPlacement;
   private retryAt = 0;
   private lastDraw = -Infinity;
   private lastProgressAt = performance.now() / 1000;
   private lastVideoTime = -1;
   private readonly url: string;
-  private status = '正在连接直播…';
+  private status = '靠近并看向屏幕时播放';
 
-  /** 功能：创建屏幕外框与画布，静音自动播放兼容 Chrome HLS.js 和 Safari 原生 HLS。时间：2026-10-21；作者：lq。 */
+  /** 功能：创建屏幕外框与画布，按需有声播放兼容 Chrome HLS.js 和 Safari 原生 HLS。时间：2026-10-21；作者：lq。 */
   constructor(scene: THREE.Scene, placement: ScreenPlacement, url = CCTV13_URL) {
     this.url = url;
+    this.placement = placement;
     this.canvas.width = 960;
     this.canvas.height = 540;
     const context = this.canvas.getContext('2d');
@@ -62,22 +69,53 @@ export class LiveScreen {
     this.video.muted = true;
     this.video.autoplay = true;
     this.video.playsInline = true;
-    this.video.preload = 'auto';
+    this.video.preload = 'none';
     this.video.setAttribute('aria-label', 'CCTV13 新闻直播');
     this.video.addEventListener('error', this.fail);
     document.addEventListener('pointerdown', this.resume);
+    document.addEventListener('keydown', this.resume);
+    this.video.addEventListener('canplay', this.resume);
+    document.addEventListener('visibilitychange', this.onVisibilityChange);
     this.draw(false);
-    void this.connect();
   }
 
   /** 功能：复用玩家进入游戏的操作恢复被浏览器阻止的播放，无需额外点击电视。时间：2026-10-21；作者：lq。 */
   private readonly resume = (): void => {
-    if (!this.disposed) void this.video.play().catch(() => { /* 功能：保持静音并等待下一次游戏操作。时间：2026-10-21；作者：lq。 */ });
+    if (this.disposed || !this.active || this.retryAt) return;
+    const generation = this.generation;
+    this.video.muted = false;
+    void this.video.play().catch(() => {
+      // 功能：浏览器尚未允许有声播放时先显示画面，下次游戏点击/按键自动恢复声音。时间：2026-10-21；作者：lq。
+      if (!this.active || this.disposed || generation !== this.generation) return;
+      this.video.muted = true;
+      void this.video.play().catch(() => { /* 功能：等待媒体就绪或下一次游戏操作。时间：2026-10-21；作者：lq。 */ });
+    });
   };
+
+  /** 功能：切换到后台标签页时立即断流，不依赖被浏览器暂停的渲染循环。时间：2026-10-21；作者：lq。 */
+  private readonly onVisibilityChange = (): void => {
+    if (document.hidden && this.active) { this.active = false; this.suspend(); }
+  };
+
+  /** 功能：离开视野后立即静音、清空媒体源并销毁 HLS，停止后台下载和解码。时间：2026-10-21；作者：lq。 */
+  private suspend(): void {
+    this.generation++;
+    this.connecting = false;
+    this.retryAt = 0;
+    this.video.muted = true;
+    this.hls?.destroy();
+    this.hls = null;
+    this.video.pause();
+    this.video.removeAttribute('src');
+    this.video.load();
+    this.lastVideoTime = -1;
+    this.status = '靠近并看向屏幕时播放';
+    this.draw(false);
+  }
 
   /** 功能：失败后释放流连接，十秒后重新获取入口清单，不循环请求过期分片。时间：2026-10-21；作者：lq。 */
   private readonly fail = (): void => {
-    if (this.disposed || this.retryAt) return;
+    if (this.disposed || !this.active || this.retryAt) return;
     this.status = '直播连接暂不可用 · 自动重试中';
     this.retryAt = performance.now() / 1000 + 10;
     this.hls?.destroy();
@@ -87,7 +125,8 @@ export class LiveScreen {
 
   /** 功能：按需加载 HLS 播放库，限定缓冲避免长时间游戏积累视频内存。时间：2026-10-21；作者：lq。 */
   private async connect(): Promise<void> {
-    if (this.disposed || this.connecting) return;
+    if (this.disposed || !this.active || this.connecting) return;
+    const generation = ++this.generation;
     this.connecting = true;
     this.retryAt = 0;
     this.status = '正在连接直播…';
@@ -97,7 +136,7 @@ export class LiveScreen {
         this.video.src = this.url;
       } else {
         const { default: HlsPlayer } = await import('hls.js');
-        if (this.disposed) return;
+        if (this.disposed || !this.active || generation !== this.generation) return;
         if (!HlsPlayer.isSupported()) { this.status = '当前浏览器不支持 HLS 直播'; return; }
         this.hls = new HlsPlayer({ maxBufferLength: 10, backBufferLength: 0, capLevelToPlayerSize: true });
         this.hls.on(HlsPlayer.Events.ERROR, (_event, data) => { if (data.fatal) this.fail(); });
@@ -105,13 +144,23 @@ export class LiveScreen {
         this.hls.attachMedia(this.video);
       }
       this.resume();
-    } catch { this.fail(); }
-    finally { this.connecting = false; }
+    } catch { if (generation === this.generation) this.fail(); }
+    finally { if (generation === this.generation) this.connecting = false; }
   }
 
-  /** 功能：真实时间推进直播、二十秒停帧自动重连，画布最多每秒十五帧更新。时间：2026-10-21；作者：lq。 */
-  update(now: number): void {
+  /** 功能：只在游戏中靠近、看见屏幕且页面在前台时播放；转身/遮挡/暂停后立即断流。时间：2026-10-21；作者：lq。 */
+  update(now: number, camera: THREE.Camera, world: CollisionWorld, enabled: boolean, volume = 0.65): void {
     if (this.disposed) return;
+    const visible = enabled && !document.hidden && canSeeScreen(this.placement, camera, world);
+    if (visible !== this.active) {
+      this.active = visible;
+      if (visible) void this.connect();
+      else this.suspend();
+    }
+    if (!this.active) return;
+    // 功能：新闻声音跟随游戏总音量，近处更清晰，观看范围边缘逐渐减弱。时间：2026-10-21；作者：lq。
+    const distance = camera.position.distanceTo(this.object.position);
+    this.video.volume = Math.max(0, Math.min(1, volume)) * Math.max(0.15, 1 - distance / LIVE_SCREEN_DISTANCE);
     if (this.retryAt && now >= this.retryAt) void this.connect();
     if (this.video.currentTime !== this.lastVideoTime) {
       this.lastVideoTime = this.video.currentTime;
@@ -141,7 +190,7 @@ export class LiveScreen {
       ctx.font = '28px sans-serif';
       ctx.fillText(this.status, 480, 305);
       ctx.font = '22px sans-serif';
-      ctx.fillText('静音自动播放', 480, 365);
+      ctx.fillText('看向屏幕自动播放画面与声音', 480, 365);
     }
     this.texture.needsUpdate = true;
   }
@@ -150,11 +199,12 @@ export class LiveScreen {
   dispose(): void {
     this.disposed = true;
     document.removeEventListener('pointerdown', this.resume);
+    document.removeEventListener('keydown', this.resume);
+    this.video.removeEventListener('canplay', this.resume);
+    document.removeEventListener('visibilitychange', this.onVisibilityChange);
     this.video.removeEventListener('error', this.fail);
-    this.hls?.destroy();
-    this.video.pause();
-    this.video.removeAttribute('src');
-    this.video.load();
+    this.active = false;
+    this.suspend();
     this.object.removeFromParent();
     this.object.traverse((child) => {
       if (child instanceof THREE.Mesh) {
