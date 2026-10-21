@@ -39,8 +39,11 @@ import type { RoundEvents } from './gamemode.ts';
 import { BotBrain } from './bots.ts';
 import type { BotGoal } from './bots.ts';
 import { WEAPONS } from './weapons.ts';
-// 功能：默认 5V5 在小容量地图自动缩减，显式人数供内部模拟测试使用。时间：2026-10-10；作者：lq。
-import { DEFAULT_TEAM_SIZE, mapTeamSizeLimit } from './matchSettings.ts';
+// 功能：默认 5V5 在小容量地图自动缩减，双方人数可分别配置。时间：2026-10-21；作者：lq。
+import { clampTeamSizes, DEFAULT_TEAM_SIZE, MAX_TEAM_SIZE, mapTeamSizeLimit } from './matchSettings.ts';
+// 功能：地图小鸡彩蛋独立于回合逻辑，只参与子弹命中和渲染。时间：2026-10-21；作者：lq。
+import { placeCritters, traceCritters, updateCritters } from './critters.ts';
+import type { Critter } from './critters.ts';
 // 功能：对局模拟使用原版手雷投掷与物理参数。时间：2026-09-30；作者：lq。
 import { grenadeLaunch, heDamage, GRENADE_GRAVITY, GRENADE_FRICTION, GRENADE_FUSE } from './grenades.ts';
 import type { WeaponId } from './weapons.ts';
@@ -75,9 +78,20 @@ export interface ResolvedShot {
   headshot: boolean;
 }
 
+/** 功能：子弹命中地图小鸡的结果，供羽毛特效、音效和命中反馈使用。时间：2026-10-21；作者：lq。 */
+export interface CritterHitEvent {
+  critter: Critter;
+  shooter: Actor;
+  point: Vec3;
+  killed: boolean;
+  weapon: WeaponId;
+}
+
 export interface MatchEvents {
   mode: RoundEvents;
   shots: ResolvedShot[];
+  /** 功能：小鸡被击中的独立事件，不参与比分与击杀统计。时间：2026-10-21；作者：lq。 */
+  critterHits: CritterHitEvent[];
   /** Sounds the audio layer should play (already positioned). */
   noises: { name: string[]; position: Vec3 }[];
   grenades: GrenadeEvent[];
@@ -90,12 +104,17 @@ export interface MatchOptions {
   map: MapData;
   graph: NavGraph | null;
   sites: ObjectiveArea[];
-  /** Team sizes; the player counts towards `ct`. */
+  /** 功能：旧的平衡人数，未指定 ctSize/tSize 时作为双方默认人数。时间：2026-10-21；作者：lq。 */
   teamSize?: number;
+  /** 功能：双方人数均可独立指定，玩家计入自己所属阵营。时间：2026-10-21；作者：lq。 */
+  ctSize?: number;
+  tSize?: number;
   /** 功能：本地玩家可选择反恐精英或恐怖分子阵营。时间：2026-09-29；作者：lq。 */
   playerTeam?: Team;
   skill?: number;
   seed?: number;
+  /** 功能：是否在每回合随机放置可射击的小鸡；默认关闭以保持无头测试稳定。时间：2026-10-21；作者：lq。 */
+  critters?: boolean;
   /** Ticks per second (fixed step). */
   tickRate?: number;
 }
@@ -145,7 +164,12 @@ export class Match {
   private readonly skill: number;
   // 功能：根据 BOT 难度缩放 BOT 子弹伤害；简单模式除了降低命中率，也降低单发伤害。时间：2026-10-05；作者：lq。
   private readonly botDamageMultiplier: number;
-  private readonly teamSize: number;
+  /** 功能：双方队伍人数，玩家计入本地玩家所属阵营。时间：2026-10-21；作者：lq。 */
+  private readonly ctSize: number;
+  private readonly tSize: number;
+  /** 功能：地图小鸡开关与每回合随机生成的小鸡列表。时间：2026-10-21；作者：lq。 */
+  private readonly crittersEnabled: boolean;
+  readonly critters: Critter[] = [];
   private readonly dt = TICK_INTERVAL;
   private readonly spawns: { ct: Vec3[]; t: Vec3[] };
   private readonly randomness: () => number;
@@ -186,8 +210,18 @@ export class Match {
     this.skill = options.skill ?? 0.15;
     // 功能：简单难度 BOT 造成约 45% 武器伤害，最高难度恢复 100% 伤害。时间：2026-10-05；作者：lq。
     this.botDamageMultiplier = 0.35 + this.skill * 0.65;
-    // 功能：默认采用 5V5 并遵守地图容量，浏览器传入的人数已统一校验。时间：2026-10-10；作者：lq。
-    this.teamSize = options.teamSize ?? Math.min(DEFAULT_TEAM_SIZE, mapTeamSizeLimit(options.map.spawns));
+    // 功能：默认采用 5V5；显式人数供浏览器与无头测试使用，浏览器已按出生点容量收敛。
+    // 功能：模拟层仍限制在 1..6，允许测试地图复用出生点，不改变既有物理与回合逻辑。时间：2026-10-21；作者：lq。
+    const defaultSize = options.teamSize ?? Math.min(DEFAULT_TEAM_SIZE, mapTeamSizeLimit(options.map.spawns));
+    const sizes = clampTeamSizes(
+      options.ctSize ?? defaultSize,
+      options.tSize ?? defaultSize,
+      { ct: MAX_TEAM_SIZE, t: MAX_TEAM_SIZE },
+      { ct: defaultSize, t: defaultSize },
+    );
+    this.ctSize = sizes.ct;
+    this.tSize = sizes.t;
+    this.crittersEnabled = options.critters === true;
 
     let seed = options.seed ?? 12345;
     this.randomness = () => {
@@ -229,11 +263,10 @@ export class Match {
     const tBotLoadout: typeof tLoadout = { 1: 'knife', 2: 'glock18', 3: 'knife' };
     const ctBotLoadout: typeof ctLoadout = { 1: 'knife', 2: 'usp45', 3: 'knife' };
 
-    for (let i = 0; i < this.teamSize; i++) {
+    // 功能：CT 人数独立于 T 人数；人数为 1 且玩家在该阵营时就是独自作战。时间：2026-10-21；作者：lq。
+    for (let i = 0; i < this.ctSize; i++) {
       const ctSpawn = this.spawns.ct[i % this.spawns.ct.length]!;
-      const tSpawn = this.spawns.t[i % this.spawns.t.length]!;
       const ctHuman = playerTeam === 'ct' && i === 0;
-      const tHuman = playerTeam === 't' && i === 0;
 
       const ct: Actor = createActor({
         name: ctHuman ? 'YOU' : (BOT_NAMES_CT[playerTeam === 'ct' ? i - 1 : i] ?? `CT${i}`),
@@ -259,7 +292,11 @@ export class Match {
       } else {
         this.brains.set(ct.id, new BotBrain(Math.floor(this.randomness() * 0xffffff), ctSpawn));
       }
+    }
 
+    for (let i = 0; i < this.tSize; i++) {
+      const tSpawn = this.spawns.t[i % this.spawns.t.length]!;
+      const tHuman = playerTeam === 't' && i === 0;
       const t: Actor = createActor({
         name: tHuman ? 'YOU' : (BOT_NAMES_T[playerTeam === 't' ? i - 1 : i] ?? `T${i}`),
         team: 't',
@@ -331,6 +368,16 @@ export class Match {
     this.patrolUntil.clear();
     this.bombRetriever = null;
     this.bombDefuser = null;
+    // 功能：每回合重新随机撒小鸡，避免固定点位被背板；关闭开关时清空旧列表。时间：2026-10-21；作者：lq。
+    this.critters.length = 0;
+    if (this.crittersEnabled) {
+      this.critters.push(...placeCritters({
+        graph: this.graph,
+        world: this.world,
+        spawns: [...this.spawns.ct, ...this.spawns.t],
+        random: this.randomness,
+      }));
+    }
     const carrier = this.mode.bomb.carrier;
     const reachable = this.siteGoals.map((position, index) => ({ position, index }))
       .filter(({ position }) => !this.graph || !carrier || findPath(this.graph, carrier.move.origin, position));
@@ -539,6 +586,7 @@ export class Match {
     const events: MatchEvents = {
       mode: this.mode.update(this.dt, this.actors, now),
       shots: [],
+      critterHits: [],
       noises: [],
       grenades: [],
       grenadeBounces: [],
@@ -552,6 +600,8 @@ export class Match {
       this.droppedWeapons.length = 0;
       this.autoBuyBots(now);
     }
+    // 功能：对局进行时按固定模拟步长推进小鸡游走，暂停和回合冻结时停步。时间：2026-10-21；作者：lq。
+    if (this.mode.phase === 'live') updateCritters(this.critters, this.world, this.dt, now, this.randomness);
     // 功能：C4 倒计时归零后按爆心距离结算伤害，保留原版爆炸会杀伤附近角色的玩法。时间：2026-09-30；作者：lq。
     if (events.mode.bombExploded && this.mode.bomb.position) {
       const blast = this.mode.bomb.position;
@@ -849,6 +899,33 @@ export class Match {
     const worldDistance = length;
     const actorHit = traceActors(shot.start, direction, this.actors, worldDistance, shooter);
     const weapon = WEAPONS[shot.weapon];
+
+    // 功能：小鸡和敌人谁更近就打中谁；墙体和现有队友穿透规则保持不变。时间：2026-10-21；作者：lq。
+    const enemyHit = actorHit && actorHit.actor.team !== shooter.team ? actorHit : null;
+    const critterHit = traceCritters(shot.start, direction, this.critters, worldDistance);
+    if (critterHit && (!enemyHit || critterHit.distance < enemyHit.hit.distance)) {
+      const critter = critterHit.critter;
+      const wasAlive = critter.alive;
+      critter.health -= weapon.damage;
+      critter.hitAt = now;
+      if (critter.health <= 0) {
+        critter.health = 0;
+        critter.alive = false;
+        critter.diedAt = now;
+      }
+      // 功能：子弹停在小鸡身上，避免同一发继续伤害背后的角色。时间：2026-10-21；作者：lq。
+      shot.end = critterHit.point;
+      shot.hit = false;
+      shot.distance = critterHit.distance;
+      events.critterHits.push({
+        critter,
+        shooter,
+        point: critterHit.point,
+        killed: wasAlive && !critter.alive,
+        weapon: shot.weapon,
+      });
+      return { shooter, shot, victim: null, damage: 0, killed: false, headshot: false };
+    }
 
     if (!actorHit || actorHit.actor.team === shooter.team) {
       return { shooter, shot, victim: null, damage: 0, killed: false, headshot: false };

@@ -10,6 +10,8 @@ import * as THREE from 'three';
 import { Input } from './engine/input.ts';
 import { v3 } from './engine/math.ts';
 import { AudioSystem } from './engine/audio.ts';
+// 功能：即时落脚节奏与移动状态同步。时间：2026-10-21；作者：lq。
+import { FootstepCadence } from './game/footsteps.ts';
 import { loadSkybox, skyGradient } from './engine/bsp/sky.ts';
 import { Effects } from './engine/render/effects.ts';
 // 功能：T 键涂鸦使用原版喷漆纹理与独立贴花渲染。时间：2026-09-30；作者：lq。
@@ -21,14 +23,17 @@ import { GrenadeRenderer } from './engine/render/grenades.ts';
 import { DroppedWeaponRenderer } from './engine/render/droppedWeapons.ts';
 import { BombRenderer } from './engine/render/bomb.ts';
 // 功能：警家原版广告墙显示可滚动的科技资讯屏。时间：2026-10-09；作者：lq。
+import { LiveScreen, findTSpawnScreenWall } from './engine/render/liveScreen.ts';
 import { NewsScreen, findNewsScreenWall } from './engine/render/newsScreen.ts';
 import { TICK_INTERVAL, TICK_MS, TICK_RATE } from './game/constants.ts';
 import { loadMap } from './game/map/loader.ts';
 import { buildNavGraph } from './game/nav.ts';
 import { bombSitesFromBsp } from './game/objectives.ts';
 import { Match } from './game/match.ts';
-// 功能：共享机器人默认数量、地图容量及安全设置解析。时间：2026-10-10；作者：lq。
-import { mapTeamSizeLimit, parseMatchSettings, settingNumber, teamSizeForBots } from './game/matchSettings.ts';
+// 功能：共享双方人数、地图容量及安全设置解析。时间：2026-10-21；作者：lq。
+import { clampTeamSizes, MAX_TEAM_SIZE, mapTeamSizeLimits, parseMatchSettings, settingNumber, teamSizeForBots } from './game/matchSettings.ts';
+// 功能：在地图里随机放置可射击的小鸡，并在暂停菜单中提供开关。时间：2026-10-21；作者：lq。
+import { CritterRenderer } from './engine/render/critters.ts';
 import { spectatorCameraPose } from './game/spectator.ts';
 import type { GrenadeKind } from './game/match.ts';
 import { BUY_MENU, DEFUSE_RADIUS, buyMenuOptions } from './game/gamemode.ts';
@@ -130,6 +135,8 @@ const grenadeRenderer = new GrenadeRenderer(renderer.scene);
 // 功能：显示阵亡或 G 键丢弃后可拾取的原版 w_ 枪械模型。时间：2026-09-29；作者：lq。
 const droppedWeaponRenderer = new DroppedWeaponRenderer(renderer.scene);
 const bombRenderer = new BombRenderer(renderer.scene);
+// 功能：小鸡与炸弹、掉落武器同属世界场景，暂停时保持静止。时间：2026-10-21；作者：lq。
+const critterRenderer = new CritterRenderer(renderer.scene);
 const viewModel = new ViewModel();
 renderer.setViewScene(viewModel.scene, viewModel.camera);
 const audio = new AudioSystem();
@@ -142,7 +149,10 @@ const ctSpawn = map.spawns.find((spawn) => spawn.team === 'ct');
 const screenWall = bsp && map.name === 'BSP: de_dust2' && ctSpawn ? findNewsScreenWall(bsp, ctSpawn.origin) : null;
 const newsScreen = screenWall ? new NewsScreen(renderer.scene, screenWall) : null;
 // 功能：页面离开时释放大屏资源及网络请求。时间：2026-10-09；作者：lq。
-window.addEventListener('pagehide', () => newsScreen?.dispose(), { once: true });
+// 功能：匪家坡道独立安装 CCTV13 大屏，保留警家原有科技资讯。时间：2026-10-21；作者：lq。
+const liveWall = bsp && map.name === 'BSP: de_dust2' ? findTSpawnScreenWall(bsp) : null;
+const liveScreen = liveWall ? new LiveScreen(renderer.scene, liveWall) : null;
+window.addEventListener('pagehide', () => { newsScreen?.dispose(); liveScreen?.dispose(); }, { once: true });
 
 const navStarted = performance.now();
 const graph = buildNavGraph(map.collision, map.bounds, { cellSize: 64 });
@@ -150,14 +160,33 @@ const navMs = Math.round(performance.now() - navStarted);
 
 // 功能：缺少 skill 参数时保留默认 BOT 难度，避免 Number(null) 把难度误设为零。时间：2026-09-29；作者：lq。
 const skillParam = settingNumber(params.get('skill'), savedSettings.skill);
-// 功能：实际人数与设置上限使用同一规则，URL 不能绕过地图容量。时间：2026-10-10；作者：lq。
-const teamSizeLimit = mapTeamSizeLimit(map.spawns);
-const teamSize = teamSizeForBots(params.get('bots') ?? savedSettings.bots, teamSizeLimit);
+// 功能：双方人数分别读取 URL/存档，并各自受地图出生点容量限制。时间：2026-10-21；作者：lq。
+const spawnLimits = mapTeamSizeLimits(map.spawns);
+let requestedCT: unknown = savedSettings.ctSize;
+let requestedT: unknown = savedSettings.tSize;
+if (params.has('ctsize')) requestedCT = params.get('ctsize');
+if (params.has('tsize')) requestedT = params.get('tsize');
+// 功能：兼容旧的 ?bots=9 平衡链接，自动转换成双方相同人数。时间：2026-10-21；作者：lq。
+if (!params.has('ctsize') && !params.has('tsize') && params.has('bots')) {
+  const legacySize = teamSizeForBots(params.get('bots'), MAX_TEAM_SIZE);
+  requestedCT = legacySize;
+  requestedT = legacySize;
+}
+const teamSizes = clampTeamSizes(requestedCT, requestedT, spawnLimits, {
+  ct: savedSettings.ctSize,
+  t: savedSettings.tSize,
+});
+const crittersParam = params.get('critters');
+const crittersEnabled = crittersParam === null
+  ? savedSettings.critters
+  : !['0', 'false', 'off'].includes(crittersParam.toLowerCase());
 const match = new Match({
   map,
   graph,
   sites,
-  teamSize,
+  ctSize: teamSizes.ct,
+  tSize: teamSizes.t,
+  critters: crittersEnabled,
   playerTeam,
   // 功能：未指定参数时使用简单 BOT 难度，保留 URL 参数覆盖能力。时间：2026-09-29；作者：lq。
   skill: Number.isFinite(skillParam) ? Math.max(0, Math.min(1, skillParam)) : 0.15,
@@ -180,12 +209,14 @@ for (const team of ['ct', 't'] as const) {
   });
 }
 
-// 功能：设置面板显示生效人数及容量；滑块按两名机器人递增以保持双方平衡。时间：2026-10-10；作者：lq。
+// 功能：设置面板分别回显 CT/T 人数与地图小鸡开关；人数含玩家自己，滑块上限来自地图出生点。时间：2026-10-21；作者：lq。
 function initializeMatchSettings(): void {
-  const bots = document.getElementById('setting-bots') as HTMLInputElement | null;
-  if (!bots) return;
+  const ctInput = document.getElementById('setting-ct') as HTMLInputElement | null;
+  const tInput = document.getElementById('setting-t') as HTMLInputElement | null;
+  if (!ctInput || !tInput) return;
   const team = must<HTMLSelectElement>('setting-team');
   const skill = must<HTMLSelectElement>('setting-skill');
+  const critters = must<HTMLInputElement>('setting-critters');
   team.value = playerTeam;
   // 功能：URL 自定义难度也完整回显，避免打开设置后悄悄改成简单。时间：2026-10-10；作者：lq。
   const difficulty = Math.max(0, Math.min(1, skillParam));
@@ -193,35 +224,61 @@ function initializeMatchSettings(): void {
     skill.add(new Option(`自定义（${difficulty}）`, String(difficulty)));
   }
   skill.value = String(difficulty);
-  bots.min = '1';
-  bots.max = String(teamSizeLimit * 2 - 1);
-  bots.step = '2';
-  bots.value = String(teamSize * 2 - 1);
-  bots.disabled = teamSizeLimit === 1;
+
+  ctInput.min = '1';
+  ctInput.max = String(spawnLimits.ct);
+  ctInput.step = '1';
+  ctInput.value = String(teamSizes.ct);
+  ctInput.disabled = spawnLimits.ct === 1;
+  tInput.min = '1';
+  tInput.max = String(spawnLimits.t);
+  tInput.step = '1';
+  tInput.value = String(teamSizes.t);
+  tInput.disabled = spawnLimits.t === 1;
+  critters.checked = crittersEnabled;
+
+  // 功能：切换阵营时只改变“含你/仅你”的提示，不改变已经选好的双方人数。时间：2026-10-21；作者：lq。
   const updateCount = (): void => {
-    const size = teamSizeForBots(bots.value, teamSizeLimit);
-    must('setting-bots-value').textContent = `${size * 2 - 1} 个机器人 · ${size}V${size}（含你）`;
+    const ctSize = Math.max(1, Math.min(spawnLimits.ct, Math.floor(Number(ctInput.value) || 1)));
+    const tSize = Math.max(1, Math.min(spawnLimits.t, Math.floor(Number(tInput.value) || 1)));
+    const side = team.value;
+    const suffix = (size: number, aligned: boolean): string => `${size} 人${aligned ? (size === 1 ? '（仅你）' : '（含你）') : ''}`;
+    must('setting-ct-value').textContent = suffix(ctSize, side === 'ct');
+    must('setting-t-value').textContent = suffix(tSize, side === 't');
+    must('setting-team-hint').textContent = `本局共 ${ctSize + tSize - 1} 名 BOT；你是 ${side.toUpperCase()}，把本方设为 1 人即可独自作战。`;
   };
-  bots.addEventListener('input', updateCount);
+  ctInput.addEventListener('input', updateCount);
+  tInput.addEventListener('input', updateCount);
+  team.addEventListener('change', updateCount);
   updateCount();
-  must('setting-bots-limit').textContent = `当前地图最多 ${teamSizeLimit}V${teamSizeLimit}；为控制性能开销，最多开放到 6V6。双方人数平衡。`;
+  must('setting-bots-limit').textContent = `地图出生点上限：CT ${spawnLimits.ct} 人 · T ${spawnLimits.t} 人；为控制性能开销，双方最多各 6 人。`;
   must<HTMLButtonElement>('apply-match-settings').disabled = false;
 }
 window.addEventListener('cs15-open-settings', initializeMatchSettings);
 initializeMatchSettings();
-// 功能：应用设置后重新建立对局，保存选择且保留当前地图；存储不可用时用 URL 生效。时间：2026-10-10；作者：lq。
+// 功能：应用设置后重新建立对局，保存分阵营人数与小鸡开关并保留当前地图。时间：2026-10-21；作者：lq。
 document.addEventListener('click', (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement) || !target.closest('[data-apply-settings]')) return;
-  const size = teamSizeForBots(must<HTMLInputElement>('setting-bots').value, teamSizeLimit);
-  const settings = { version: 2, team: must<HTMLSelectElement>('setting-team').value,
-    skill: must<HTMLSelectElement>('setting-skill').value, bots: size * 2 - 1 };
+  const ctSize = Math.max(1, Math.min(spawnLimits.ct, Math.floor(Number(must<HTMLInputElement>('setting-ct').value) || 1)));
+  const tSize = Math.max(1, Math.min(spawnLimits.t, Math.floor(Number(must<HTMLInputElement>('setting-t').value) || 1)));
+  const settings = {
+    version: 3,
+    team: must<HTMLSelectElement>('setting-team').value,
+    skill: must<HTMLSelectElement>('setting-skill').value,
+    ctSize,
+    tSize,
+    critters: must<HTMLInputElement>('setting-critters').checked,
+  };
   try { localStorage.setItem('cs15-settings', JSON.stringify(settings)); }
   catch { /* 功能：URL 保证设置在当前重新开局时仍生效。时间：2026-10-10；作者：lq。 */ }
   const url = new URL(window.location.href);
   url.searchParams.set('team', settings.team);
   url.searchParams.set('skill', settings.skill);
-  url.searchParams.set('bots', String(settings.bots));
+  url.searchParams.set('ctsize', String(settings.ctSize));
+  url.searchParams.set('tsize', String(settings.tSize));
+  url.searchParams.set('critters', settings.critters ? '1' : '0');
+  url.searchParams.delete('bots');
   window.location.assign(url.href);
 });
 
@@ -354,6 +411,9 @@ function soundList(): string[] {
     'sound/weapons/ric1.wav',
     'sound/player/headshot1.wav',
     'sound/player/bhit_flesh-1.wav',
+    // 功能：小鸡中弹与倒地使用原版肉体命中声的另外两个随机片段。时间：2026-10-21；作者：lq。
+    'sound/player/bhit_flesh-2.wav',
+    'sound/player/bhit_flesh-3.wav',
     'sound/weapons/c4_plant.wav',
     'sound/weapons/c4_explode1.wav',
     // 功能：预载 C4 滴答、安装和拆除音效，确保首次操作即时有声。时间：2026-09-30；作者：lq。
@@ -436,7 +496,7 @@ const menuToast = document.getElementById('menu-toast');
 const menuLabels: Record<string, string> = {
   servers: '服务器列表正在准备中',
   // 功能：房间提示回显当前实际人数。时间：2026-10-10；作者：lq。
-  create: `创建房间：本地 ${teamSize}V${teamSize} 房间已就绪`,
+  create: `创建房间：本地 ${teamSizes.ct}V${teamSizes.t} 房间已就绪`,
   settings: '游戏设置可在对局中按 Esc 调整',
   ranking: '排行榜：本周最佳 CT_Fan001',
   help: '帮助：点击快速开始进入训练对局',
@@ -484,8 +544,9 @@ noMapNotice.innerHTML = [
   loaded.note,
   `导航图 ${graph.nodes.length} 个节点（${navMs} ms）· 炸弹点 ${sites.length} 个`,
   '',
-  // 功能：地图说明显示实际生效的队伍人数。时间：2026-10-10；作者：lq。
-  `${teamSize}V${teamSize}：你是 ${playerTeam.toUpperCase()}，${teamSize - 1} 个 BOT 队友，对面 ${teamSize} 个 BOT。按 M 可切换阵营。`,
+  // 功能：地图说明显示双方实际生效人数与地图小鸡开关。时间：2026-10-21；作者：lq。
+  `${teamSizes.ct}V${teamSizes.t}：你是 ${playerTeam.toUpperCase()}，本方 ${teamSizes[playerTeam]} 人（含你），对方 ${teamSizes[playerTeam === 'ct' ? 't' : 'ct']} 人。按 M 可切换阵营。`,
+  `地图小鸡：${crittersEnabled ? '开启（每回合随机出现，可射击）' : '关闭'}；设置中可开关。`,
   '换地图 <code>?map=de_dust2</code>，BOT 强度 <code>?skill=0.9</code>。',
 ].join('<br>');
 
@@ -523,8 +584,8 @@ let simTime = 0;
 let reloadSoundCues: { weapon: WeaponId; at: number; file: string }[] = [];
 let killFeed: { killer: string; victim: string; weapon: string; headshot: boolean }[] = [];
 let roundBanner: string | null = null;
-let stepAccumulator = 0;
-let lastFootstep = -99;
+// 功能：用移动状态和下一落脚时间驱动音效，起步立即落脚，停止/离地时重置。时间：2026-10-21；作者：lq。
+const footstepCadence = new FootstepCadence();
 let localKills = 0;
 let localDeaths = 0;
 let hitUntil = 0;
@@ -835,6 +896,19 @@ function frame(now: number): void {
       }
     }
 
+    // 功能：小鸡中弹时炸出羽毛并播放原版受击声；只给准星反馈，不计入比分和击杀统计。时间：2026-10-21；作者：lq。
+    for (const hit of events.critterHits) {
+      effects.addFeathers(hit.point);
+      audio.playAt(hit.killed ? 'sound/player/bhit_flesh-3.wav' : 'sound/player/bhit_flesh-2.wav', hit.point, {
+        volume: 0.6,
+        rate: 1.35,
+      });
+      if (hit.shooter === playerActor) {
+        hitUntil = simTime + 0.18;
+        hitMarker.classList.add('on');
+      }
+    }
+
     // 功能：手雷引爆事件连接高爆、烟雾粒子与闪光白屏，并使用本地原版音效。时间：2026-09-29；作者：lq。
     for (const grenade of events.grenades) {
       if (grenade.kind === 'hegrenade') {
@@ -856,16 +930,10 @@ function frame(now: number): void {
     }
 
     const speed = Math.hypot(playerActor.move.velocity.x, playerActor.move.velocity.y);
-    if (playerActor.move.onground && speed > 90 && playerActor.alive) {
-      stepAccumulator += speed * TICK_INTERVAL;
-      if (stepAccumulator > 150 && simTime - lastFootstep > 0.26) {
-        stepAccumulator = 0;
-        lastFootstep = simTime;
-        audio.playRandom(
-          [1, 2, 3, 4].map((i) => `sound/player/pl_dirt${i}.wav`),
-          { volume: 0.32 },
-        );
-      }
+    // 功能：与 GoldSrc 跑步约 300ms 的步频对齐；不等待走满 150 单位，慢走与蹲行保持安静。时间：2026-10-21；作者：lq。
+    if (footstepCadence.update(simTime, playerActor.move.onground, speed, playerActor.alive, playerActor.move.ducked)) {
+      audio.playRandom([1, 2, 3, 4].map((i) => `sound/player/pl_dirt${i}.wav`),
+        { volume: 0.32, dropIfNotReady: true });
     }
 
     accumulator -= TICK_INTERVAL;
@@ -944,6 +1012,8 @@ function frame(now: number): void {
 
   // 功能：第一人称只隐藏活着的本地模型，观战时保留被观察队友与玩家尸体。时间：2026-09-29；作者：lq。
   actorRenderer.update(match.actors, alive ? playerActor : null, simTime);
+  // 功能：小鸡使用模拟时间播放待机/啄食/倒地动画，暂停时与人物一起冻结。时间：2026-10-21；作者：lq。
+  critterRenderer.update(match.critters, simTime);
   grenadeRenderer.update(match.grenadeProjectiles);
   bombRenderer.update(match.mode);
   droppedWeaponRenderer.update(match.droppedWeapons);
@@ -954,6 +1024,8 @@ function frame(now: number): void {
   effects.update(simulationActive ? dt : 0);
   // 功能：资讯屏独立使用真实时间，暂停对局后仍可阅读和刷新新闻。时间：2026-10-09；作者：lq。
   newsScreen?.update(performance.now() / 1000, renderer.camera);
+  // 功能：直播使用真实时钟，游戏暂停不会把新闻直播变为录像。时间：2026-10-21；作者：lq。
+  liveScreen?.update(performance.now() / 1000);
   renderer.render();
 
   hudAccum += rawDt;
@@ -970,7 +1042,7 @@ function frame(now: number): void {
       tickRate: TICK_RATE,
       mapName: map.name,
       mapNote: debug
-        ? `${loaded.note} · 导航 ${graph.nodes.length} 节点` +
+        ? `${loaded.note} · 导航 ${graph.nodes.length} 节点 · 小鸡 ${match.critters.filter((critter) => critter.alive).length}` +
           ` | canvas ${container.clientWidth}x${container.clientHeight}` +
           ` cam ${renderer.camera.position.x.toFixed(0)},${renderer.camera.position.y.toFixed(0)},${renderer.camera.position.z.toFixed(0)}` +
           ` err ${renderer.webgl.getContext().getError()}`

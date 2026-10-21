@@ -259,6 +259,27 @@ export class Effects {
     }
   }
 
+  /** 功能：小鸡中弹时炸开一小团羽毛，使用普通混合避免变成发光火花。时间：2026-10-21；作者：lq。 */
+  addFeathers(point: Vec3): void {
+    const [x, y, z] = toThree(point.x, point.y, point.z);
+    for (let i = 0; i < 9; i++) {
+      const puff = this.puffs[this.puffCursor % PUFF_POOL]!;
+      this.puffCursor++;
+      puff.sprite.position.set(x, y, z);
+      puff.velocity.set((this.rand() - 0.5) * 46, 16 + this.rand() * 42, (this.rand() - 0.5) * 46);
+      puff.maxLife = 0.75 + this.rand() * 0.5;
+      puff.startSize = 1.6;
+      puff.endSize = 4.2;
+      puff.life = puff.maxLife;
+      puff.sprite.scale.setScalar(1.8 + this.rand() * 1.6);
+      const material = puff.sprite.material as THREE.SpriteMaterial;
+      material.color.setHex(i % 3 === 0 ? 0xc9a06a : 0xf4ead6);
+      material.blending = THREE.NormalBlending;
+      material.opacity = 0.9;
+      puff.sprite.visible = true;
+    }
+  }
+
   /** 功能：高爆弹、烟雾弹引爆时生成对应颜色与持续时间的原版风格粒子。时间：2026-09-29；作者：lq。 */
   addGrenadeBurst(point: Vec3, kind: 'hegrenade' | 'smokegrenade' | 'flashbang'): void {
     const [x, y, z] = toThree(point.x, point.y, point.z);

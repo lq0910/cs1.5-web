@@ -15,6 +15,7 @@
     "extract-assets": "node tools/extract-assets.mjs"
   },
   "dependencies": {
+    "hls.js": "^1.7.3",
     "three": "^0.186.1"
   },
   "devDependencies": {

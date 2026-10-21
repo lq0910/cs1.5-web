@@ -116,7 +116,7 @@ export function buildStudio(mdl: Mdl, targetHeight?: number, sequenceName?: stri
 }
 
 /** 功能：按原版动作帧更新人物骨骼网格，让奔跑、蹲伏和持枪姿势跟随游戏状态。时间：2026-09-29；作者：lq。 */
-export function setStudioPose(group: THREE.Group, sequenceName: string, frame: number, upperSequenceName?: string, pitch = 0): void {
+export function setStudioPose(group: THREE.Group, sequenceName: string, frame: number, upperSequenceName?: string, pitch = 0, boneOffsets?: Readonly<Record<string, readonly [number, number, number]>>): void {
   const state = animated.get(group);
   if (!state) return;
   const sequence = findSequence(state.mdl, sequenceName);
@@ -132,6 +132,9 @@ export function setStudioPose(group: THREE.Group, sequenceName: string, frame: n
       // 功能：臀部辅助骨骼必须随腿部奔跑动作，避免匪徒皮肤在胯部被拉成尖长三角面。时间：2026-09-29；作者：lq。
       const useUpper = upperPose && !/Pelvis|Butt|Thigh|Calf|Foot|Toe|Ankle|Knee/i.test(boneName) && boneIndex > 1;
       const point = transformVertex(useUpper ? upperPose : pose, mesh.vertices[i]!, boneIndex);
+      // 功能：允许无行走序列的原版小鸡按骨骼追加位移，保留原版贴图和啄食动画。时间：2026-10-21；作者：lq。
+      const offset = boneOffsets?.[boneName];
+      if (offset) point.add(new THREE.Vector3(...offset));
       if (state.player) attribute.setXYZ(i, point.x, point.z, -point.y);
       else attribute.setXYZ(i, -point.y, point.z, -point.x);
     }

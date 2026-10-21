@@ -14,6 +14,8 @@ import type { Vec3 } from './math.ts';
 export interface PlayOptions {
   volume?: number;
   rate?: number;
+  /** 功能：短时动作音效缺失时仅预载，不延迟补播过期脚步。时间：2026-10-21；作者：lq。 */
+  dropIfNotReady?: boolean;
   /** Distance in world units after which the sound is inaudible. */
   maxDistance?: number;
 }
@@ -41,7 +43,8 @@ export class AudioSystem {
     if (!this.context) {
       const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!Ctor) return;
-      this.context = new Ctor();
+      // 功能：交互音频优先低延迟输出以跟随移动与开火。时间：2026-10-21；作者：lq。
+      this.context = new Ctor({ latencyHint: 'interactive' });
       this.master = this.context.createGain();
       this.master.gain.value = this.volume;
       this.master.connect(this.context.destination);
@@ -100,7 +103,7 @@ export class AudioSystem {
     if (!buffer || !this.context || !this.master) {
       // 功能：未预载完成的首次音效在解码后立即播放，避免第一次换弹静音。时间：2026-09-29；作者：lq。
       if (this.context && this.master) void this.load(name).then(() => {
-        if (this.buffers.has(name)) this.play(name, options);
+        if (!options.dropIfNotReady && this.buffers.has(name)) this.play(name, options);
       });
       return;
     }

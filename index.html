@@ -248,6 +248,12 @@
   .setting-row { display: grid; grid-template-columns: 120px 1fr; align-items: center; gap: 14px; padding: 11px 0; border-bottom: 1px solid rgba(255,255,255,.1); color: #cbd5db; font-size: 14px; }
   .setting-row select, .setting-row input { width: 100%; accent-color: #eab308; }
   .setting-row select { padding: 7px 9px; border: 1px solid rgba(255,255,255,.2); border-radius: 4px; background: #121a22; color: #edf0f2; }
+  /* 功能：分阵营人数滑块显示当前人数，并让地图小鸡复选框保持原尺寸。时间：2026-10-21；作者：lq。 */
+  .setting-row output { display: block; margin-top: 6px; color: #f3d46b; font-size: 13px; }
+  .setting-row .setting-check { display: flex; align-items: center; gap: 9px; color: #cbd5db; font-size: 14px; cursor: pointer; }
+  .setting-row input[type="checkbox"] { width: 17px; height: 17px; flex: 0 0 auto; }
+  .setting-hint { margin: 8px 0 0; color: #aab6be; font-size: 13px; line-height: 1.55; }
+  .setting-note { margin: 10px 0 0; color: #8f9aa3; font-size: 12px; line-height: 1.6; }
   .menu-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
   .menu-modal-actions button { padding: 8px 16px; border: 1px solid rgba(255,255,255,.2); border-radius: 4px; background: #202c35; color: #e5e7eb; cursor: pointer; }
   .menu-modal-actions button.primary { border-color: #eab308; background: #80631a; color: #fff4bd; }
@@ -624,7 +630,8 @@
           },
           settings: {
             title: '游戏设置 / SETTINGS',
-            body: `<div class="setting-row"><label for="setting-team">玩家阵营</label><select id="setting-team"><option value="ct">反恐精英 CT</option><option value="t">恐怖分子 T</option></select></div><div class="setting-row"><label for="setting-skill">机器人难度</label><select id="setting-skill"><option value="0.15">简单</option><option value="0.45">普通</option><option value="0.75">困难</option><option value="0.95">专家</option></select></div><!-- 功能：回显机器人总数与地图容量，加载完地图后开放设置。时间：2026-10-10；作者：lq。 --><div class="setting-row"><label for="setting-bots">机器人数量</label><div><input id="setting-bots" type="range" min="1" max="9" step="2" value="9" disabled /><output id="setting-bots-value" for="setting-bots">地图加载中…</output></div></div><p id="setting-bots-limit" style="color:#aab6be;font-size:13px">人数上限按地图容量自动调整。</p><div class="menu-modal-actions"><button data-close-modal>取消</button><button id="apply-match-settings" class="primary" data-apply-settings disabled>应用并重新开局</button></div>`
+            // 功能：双方人数分别设置，并增加地图小鸡开关；加载地图后由游戏模块填充上限。时间：2026-10-21；作者：lq。
+            body: `<div class="setting-row"><label for="setting-team">玩家阵营</label><select id="setting-team"><option value="ct">反恐精英 CT</option><option value="t">恐怖分子 T</option></select></div><div class="setting-row"><label for="setting-skill">机器人难度</label><select id="setting-skill"><option value="0.15">简单</option><option value="0.45">普通</option><option value="0.75">困难</option><option value="0.95">专家</option></select></div><div class="setting-row"><label for="setting-ct">CT 人数</label><div><input id="setting-ct" type="range" min="1" max="6" step="1" value="5" disabled /><output id="setting-ct-value" for="setting-ct">地图加载中…</output></div></div><div class="setting-row"><label for="setting-t">T 人数</label><div><input id="setting-t" type="range" min="1" max="6" step="1" value="5" disabled /><output id="setting-t-value" for="setting-t">地图加载中…</output></div></div><p id="setting-team-hint" class="setting-hint">人数包含你自己；把本方设为 1 人即可独自作战。</p><div class="setting-row"><label for="setting-critters">地图小鸡</label><div><label class="setting-check"><input id="setting-critters" type="checkbox" checked /> 每回合随机生成可射击的小鸡</label></div></div><p id="setting-bots-limit" class="setting-hint">人数上限按地图出生点自动调整。</p><p class="setting-note">小鸡彩蛋来自原版 cs_italy 的经典设定：可射击、掉落羽毛，不影响比分与经济。</p><div class="menu-modal-actions"><button data-close-modal>取消</button><button id="apply-match-settings" class="primary" data-apply-settings disabled>应用并重新开局</button></div>`
           },
           lan: {
             title: '局域网服务器 / LAN SERVERS',
