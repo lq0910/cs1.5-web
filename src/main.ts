@@ -42,6 +42,14 @@ import { WEAPONS, reloadDuration } from './game/weapons.ts';
 import type { WeaponSlot } from './game/weapons.ts';
 import type { WeaponId } from './game/weapons.ts';
 import { Hud } from './ui/hud.ts';
+// 功能：启动本地素材请求接管和主菜单导入按钮。时间：2026-10-30；作者：lq。
+import { bindLocalAssetImporter, installLocalAssetFetch } from './localAssets.ts';
+// 功能：首页显示 GitHub Release 的版本更新摘要。时间：2026-10-30；作者：lq。
+import { loadReleaseNews } from './releaseNews.ts';
+
+installLocalAssetFetch();
+bindLocalAssetImporter();
+void loadReleaseNews();
 
 function must<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -502,7 +510,7 @@ const menuLabels: Record<string, string> = {
   help: '帮助：点击快速开始进入训练对局',
   profile: 'CT_Fan001 · Lv. 12 · 经验值 3200 / 5000',
   news: '最新公告：CS1.5 Web 测试版上线',
-  maps: '热门地图：de_dust2 · de_inferno · cs_assault',
+  // 功能：移除未实现的热门地图入口提示，首页只展示真实版本公告。时间：2026-10-30；作者：lq。
   exit: '感谢游玩 Counter-Strike 1.5 Web',
 };
 let menuToastTimer = 0;

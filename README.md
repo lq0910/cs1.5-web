@@ -27,12 +27,33 @@ pnpm dev              # 打开终端显示的本地地址
 |---|---|
 | `pnpm dev` | 开发服务器（热更新） |
 | `pnpm build` | 类型检查 + 生产构建到 `dist/` |
+| `pnpm package:release` | 构建并生成 `release/cs15-web-snapshot.zip` |
+| `pnpm tauri:build` | 使用 Tauri 构建当前平台的桌面安装包 |
 | `pnpm test` | 无头测试（物理、几何、BSP/WAD、武器弹道、购买快捷键、手雷落地爆炸、分阵营人数、地图小鸡、回合与完整对局） |
 | `pnpm typecheck` | 只做类型检查 |
 | `pnpm make-bsp` | 把内置移动测试地图编译成 `public/cstrike/maps/white_house.bsp` + `white_house.wad` |
 | `pnpm list-maps -- "<cstrike目录>"` | 列出本地 CS 安装里的地图与 WAD |
 
 ## 操作
+
+## 构建与 GitHub Release
+
+本项目提供免费下载的静态发布包和 Tauri 桌面安装包。执行 `pnpm package:release` 会先构建，再生成不含 `public/cstrike/` 原版素材的 `release/cs15-web-snapshot.zip`。仓库中的 `.github/workflows/release.yml` 会在推送 `v1.0.0` 这类标签时自动构建 Windows 安装包、macOS DMG 和网页 ZIP，并创建 GitHub Release。桌面壳的本地构建需要 Rust，并通过 `pnpm dlx` 获取 Tauri CLI：
+
+```bash
+pnpm package:release
+pnpm tauri:build
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+主界面的赞赏码和公众号二维码应使用发布者自己的图片，放到 `public/support/` 后再构建。广告可以作为独立、可关闭的展示位接入，但应使用合法广告平台、明确标识广告内容，并避免影响游戏操作；当前仓库没有接入广告 SDK。
+
+桌面安装包和网页 ZIP 都不包含从原版 CS 安装目录提取的地图、模型、贴图和音频，发布包只内置项目自制的 `white_house` 测试地图。若要加载原版素材，用户应自行从自己合法持有的安装中提取，并确认许可后放入本地资源目录。Tauri 壳只能封装资源，不能改变第三方素材的授权状态。
+
+进入主菜单后点击“导入本地素材”，选择本机合法持有的 `cstrike` 素材目录。文件会保存在当前浏览器或 Tauri 应用的本地 IndexedDB 中，仅用于本机加载，不会上传到服务器；导入完成后应用会自动刷新。QQ群二维码用于玩家交流和导入问题答疑，不提供未经授权的第三方素材下载。
+
+关于“开源、免费、仅供学习”是否足以解决第三方素材授权问题，请看 [LEGAL-NOTICE.md](LEGAL-NOTICE.md)。非营利和开源本身不等于取得复制、发行或网络传播许可。
 
 | 按键 | 作用 |
 |---|---|

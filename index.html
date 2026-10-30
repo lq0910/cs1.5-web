@@ -137,7 +137,14 @@
   #pause-menu button { padding: 10px 14px; border: 1px solid rgba(255,255,255,.2); border-radius: 4px; background: #202c35; color: #e5e7eb; cursor: pointer; font: inherit; }
   #pause-menu button.primary { border-color: #eab308; background: #80631a; color: #fff4bd; }
   #pause-menu button:hover { filter: brightness(1.15); }
+  /* 功能：暂停时显示轻量项目支持位，不遮挡主要操作。时间：2026-10-30；作者：lq。 */
+  .pause-support { display: flex; align-items: center; gap: 12px; margin: 0 0 18px; padding: 10px; border: 1px solid rgba(255,255,255,.12); border-radius: 5px; background: rgba(0,0,0,.22); text-align: left; }
+  .pause-support img { width: 72px; height: 72px; flex: 0 0 72px; object-fit: cover; background: #fff; }
+  .pause-support strong { display: block; margin-bottom: 4px; color: #f3d46b; font-size: 13px; }
+  .pause-support span { color: #aeb6bd; font-size: 11px; line-height: 1.45; }
   #panel { position: relative; width: 100%; height: 100%; }
+  /* 功能：隐藏尚未实现的服务器、排行榜和在线建房入口。时间：2026-10-30；作者：lq。 */
+  [data-purpose="nav-item-servers"], [data-purpose="nav-item-ranking"], [data-purpose="action-server-list"], [data-purpose="action-create-room"] { display: none !important; }
   #crosshair, #hitmarker, #flashbang, #bombflash, #scope, #status, #roundbar, #feed, #radio-caption, #buymenu, #centre, #radar, #scoreboard, #hud, #team-select, #nomap { pointer-events: none; }
   #nomap[hidden], #team-select[hidden] { display: none !important; }
   /* 功能：恢复 FPS 对局准星，在鼠标锁定后显示于画面中心。时间：2026-10-01；作者：lq。 */
@@ -257,6 +264,20 @@
   .menu-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
   .menu-modal-actions button { padding: 8px 16px; border: 1px solid rgba(255,255,255,.2); border-radius: 4px; background: #202c35; color: #e5e7eb; cursor: pointer; }
   .menu-modal-actions button.primary { border-color: #eab308; background: #80631a; color: #fff4bd; }
+  /* 功能：二维码未配置时显示明确的素材占位提示，避免出现破图。时间：2026-10-25；作者：lq。 */
+  .qr-placeholder { min-height: 150px; display: grid; place-items: center; padding: 10px; border: 1px dashed rgba(234,179,8,.45); background: rgba(0,0,0,.22); color: #c0c8ce; text-align: center; }
+  .qr-placeholder img { width: 150px; height: 150px; object-fit: contain; background: #fff; }
+  /* 功能：首页右侧展示公众号、赞赏和玩家交流群信息。时间：2026-10-30；作者：lq。 */
+  .sponsor-card { display: flex; align-items: center; gap: 12px; }
+  .sponsor-card img { width: 86px; height: 86px; object-fit: cover; background: #fff; border-radius: 4px; }
+  .sponsor-card strong { display: block; margin-bottom: 5px; color: #f3d46b; font-size: 14px; }
+  .sponsor-card p { margin: 0; color: #c0c8ce; font-size: 11px; line-height: 1.55; }
+  /* 功能：为二维码和宣传图片提供统一的放大预览层。时间：2026-10-30；作者：lq。 */
+  [data-zoomable] { cursor: zoom-in; }
+  #image-preview[hidden] { display: none !important; }
+  #image-preview { position: fixed; inset: 0; z-index: 120; display: grid; place-items: center; padding: 28px; background: rgba(0,0,0,.82); backdrop-filter: blur(5px); }
+  #image-preview img { max-width: min(92vw, 900px); max-height: 88vh; object-fit: contain; border: 1px solid rgba(250,204,21,.65); border-radius: 6px; background: #fff; box-shadow: 0 18px 70px rgba(0,0,0,.8); cursor: zoom-out; }
+  #image-preview-close { position: absolute; top: 18px; right: 24px; border: 0; background: transparent; color: #e5e7eb; font-size: 38px; cursor: pointer; }
   @media (max-width: 640px) { .menu-modal-grid { grid-template-columns: 1fr; } .menu-modal-card { padding: 22px 18px; } }
 </style>
 </head>
@@ -327,6 +348,11 @@
 <span class="font-bold tracking-wider text-xs">帮助</span>
 <span class="text-[9px] tracking-widest text-gray-500 group-hover:text-cs-gold/70 font-mono mt-0.5">HELP</span>
 </div>
+</a>
+<!-- 功能：主菜单提供作者支持入口，二维码由发布者自行放入 public/support/。时间：2026-10-25；作者：lq。 -->
+<a class="flex flex-col items-center text-gray-400 hover:text-cs-gold tactical-transition group" data-purpose="nav-item-support" data-menu="support" href="#">
+<i class="fa-solid fa-heart text-lg mb-1 group-hover:scale-110 tactical-transition"></i>
+<div class="flex flex-col items-center leading-none"><span class="font-bold tracking-wider text-xs">支持作者</span><span class="text-[9px] tracking-widest text-gray-500 font-mono mt-0.5">SUPPORT</span></div>
 </a>
 </nav>
 <!-- Invisible placeholder for balancing logo width -->
@@ -405,6 +431,14 @@
 </div>
 </button>
 <!-- 4. Game Settings Button -->
+<!-- 功能：从用户本机导入合法持有的地图、模型和音频素材，不上传文件。时间：2026-10-30；作者：lq。 -->
+<button class="tactical-card border border-white/10 hover:border-cs-gold/60 w-full h-[62px] rounded px-4 flex items-center justify-between text-left group cursor-pointer overflow-hidden transition-all duration-200 hover:bg-white/[0.08]" id="importAssetsBtn" data-purpose="action-import-assets">
+<div class="flex items-center space-x-3.5 z-10"><span class="text-gray-300 group-hover:text-cs-gold text-2xl flex items-center justify-center w-7 tactical-transition"><i class="fa-solid fa-folder-open"></i></span><div><div class="text-gray-100 group-hover:text-white font-bold text-base tracking-wide">导入本地素材</div><div class="text-[10px] text-gray-400 group-hover:text-yellow-400/80 font-mono tracking-wider uppercase tactical-transition">Import Assets</div></div></div>
+<i class="fa-solid fa-chevron-right text-xs text-gray-400 group-hover:text-cs-gold group-hover:translate-x-0.5 tactical-transition mr-1"></i>
+</button>
+<input id="localAssetsInput" type="file" webkitdirectory multiple hidden />
+<p id="assetImportStatus" class="px-1 text-[10px] text-gray-500 leading-tight">素材只保存在本机浏览器中，不会上传。</p>
+<!-- 5. Game Settings Button -->
 <button class="tactical-card border border-white/10 hover:border-white/30 w-full h-[62px] rounded px-4 flex items-center justify-between text-left group cursor-pointer overflow-hidden transition-all duration-200 hover:bg-white/[0.08]" data-purpose="action-settings" data-menu="settings">
 <div class="flex items-center space-x-3.5 z-10">
 <span class="text-gray-300 group-hover:text-cs-gold text-2xl flex items-center justify-center w-7 tactical-transition">
@@ -451,7 +485,7 @@
 <!-- END: Left Tactical Menu Panel -->
 <!-- Center Space is preserved for CT Soldier graphic backdrop -->
 <div class="flex-1 pointer-events-none"></div>
-<!-- BEGIN: Right Panels (News & Hot Maps) -->
+<!-- BEGIN: Right Panels (Release News) -->
 <div class="w-[370px] flex flex-col space-y-4 shrink-0" data-purpose="right-information-panel">
 <!-- Card 1: Latest News / Announcements -->
 <section class="tactical-card border border-white/15 rounded-md p-4 text-xs shadow-xl" data-purpose="news-announcements-card">
@@ -467,81 +501,16 @@
 </div>
 <!-- News Bullet List -->
 <ul class="space-y-2 text-gray-300" data-purpose="news-list">
-<li class="flex items-baseline space-x-2.5 hover:text-white cursor-pointer transition-colors group">
-<span class="text-gray-400 font-mono text-[11px] shrink-0">2024-06-12</span>
-<span class="truncate group-hover:underline text-[11.5px] leading-tight text-gray-200">CS1.5 Web 测试版上线，欢迎体验！</span>
-</li>
-<li class="flex items-baseline space-x-2.5 hover:text-white cursor-pointer transition-colors group">
-<span class="text-gray-400 font-mono text-[11px] shrink-0">2024-06-10</span>
-<span class="truncate group-hover:underline text-[11.5px] leading-tight text-gray-300">修复部分地图加载异常问题</span>
-</li>
-<li class="flex items-baseline space-x-2.5 hover:text-white cursor-pointer transition-colors group">
-<span class="text-gray-400 font-mono text-[11px] shrink-0">2024-06-05</span>
-<span class="truncate group-hover:underline text-[11.5px] leading-tight text-gray-300">新增 dust2、de_inferno 等经典地图</span>
-</li>
-<li class="flex items-baseline space-x-2.5 hover:text-white cursor-pointer transition-colors group">
-<span class="text-gray-400 font-mono text-[11px] shrink-0">2024-05-28</span>
-<span class="truncate group-hover:underline text-[11.5px] leading-tight text-gray-300">优化网络连接与反作弊机制</span>
-</li>
+<li class="text-gray-500 text-[11px]">正在读取版本更新…</li>
+<!-- 功能：版本公告由 GitHub Releases 或本地 releases.json 动态填充。时间：2026-10-30；作者：lq。 -->
 </ul>
 </section>
-<!-- Card 2: Hot Maps Grid -->
-<section class="tactical-card border border-white/15 rounded-md p-4 text-xs shadow-xl" data-purpose="hot-maps-card">
-<!-- Header -->
-<div class="flex items-center justify-between border-b border-white/10 pb-2.5 mb-3">
-<div class="flex items-center space-x-2">
-<span class="text-white font-bold text-sm tracking-wide">热门地图</span>
-<span class="text-gray-500 font-mono text-[11px] uppercase tracking-wider">/ HOT MAPS</span>
-</div>
-<a class="text-gray-400 hover:text-cs-gold flex items-center text-[11px] font-medium tactical-transition" href="#">
-            更多 <i class="fa-solid fa-chevron-right text-[9px] ml-1"></i>
-</a>
-</div>
-<!-- 4 Maps Thumbnails Grid -->
-<div class="grid grid-cols-4 gap-2" data-purpose="maps-grid">
-<!-- Map 1: de_dust2 -->
-<div class="flex flex-col items-center group cursor-pointer" data-purpose="map-item-dust2">
-<div class="w-full aspect-[4/5] rounded overflow-hidden border border-white/15 group-hover:border-cs-gold relative tactical-transition shadow group-hover:shadow-[0_0_8px_rgba(234,179,8,0.5)]">
-<img alt="de_dust2" class="w-full h-full object-cover object-left filter saturate-125 group-hover:scale-105 tactical-transition" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBnxVzWPD7YOFCY_CGW8lUn6ai-Jb_RRqZXbeQ1dEn2leeR7rzKRmY6IsByamJN61y8gSl-TN8C_fSbKaj1Bn6zxiuhasEFtB3NKRyGwMSNgBBRRKs2MBQeDHz4AZ6bT2vF6y4asffq-egLGoXh1Hhw0dzQGNq2KXOkQgpcf732YgemXNNWFwxs-t9wLGjph0J5SOjzBg6DygtkMXovTlRu9pO7AgIP7V4RZAnslp1ioE_6dMiKaWfUVPuKPBqASz1H3zM"/>
-<div class="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-80"></div>
-</div>
-<span class="text-[10px] font-mono tracking-tight text-gray-300 group-hover:text-cs-gold mt-1.5 font-medium truncate w-full text-center tactical-transition">
-              de_dust2
-            </span>
-</div>
-<!-- Map 2: de_inferno -->
-<div class="flex flex-col items-center group cursor-pointer" data-purpose="map-item-inferno">
-<div class="w-full aspect-[4/5] rounded overflow-hidden border border-white/15 group-hover:border-cs-gold relative tactical-transition shadow group-hover:shadow-[0_0_8px_rgba(234,179,8,0.5)]">
-<img alt="de_inferno" class="w-full h-full object-cover object-[25%_center] group-hover:scale-105 tactical-transition" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC8rWrm7indkBXBXlj-f0mpF6QpPL4-ToG7Jyybnh8wqvGrsl-LuivoMgcEfDQdEzlFzJ-_rmaBhXACk5-Yitc3bGzaoCe4s8rBXluydKCn9860jBG9C6q6vMdwdm1QtM_EaWAOqjc6ZsWtm_2WN3iFaXhrY3rQYRXPa7W9F5jh4NS2T_rqX-gXaxqk8gyt8GH1lj2yKL7wzyrJCX0q_L9PxlACJ3XTvnOJig4he7MWagVQV_aU_KG7LIdgDS7Ry9WSQAU"/>
-<div class="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-80"></div>
-</div>
-<span class="text-[10px] font-mono tracking-tight text-gray-300 group-hover:text-cs-gold mt-1.5 font-medium truncate w-full text-center tactical-transition">
-              de_inferno
-            </span>
-</div>
-<!-- Map 3: cs_assault -->
-<div class="flex flex-col items-center group cursor-pointer" data-purpose="map-item-assault">
-<div class="w-full aspect-[4/5] rounded overflow-hidden border border-white/15 group-hover:border-cs-gold relative tactical-transition shadow group-hover:shadow-[0_0_8px_rgba(234,179,8,0.5)]">
-<img alt="cs_assault" class="w-full h-full object-cover object-right group-hover:scale-105 filter brightness-75 group-hover:brightness-90 tactical-transition" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCO2_MKicW94lkppbnTFFR7txSqwm3_Dxii4CocMezsVitJ5HiGJE6p5EYa0sXzBbHUWNeM4y7AHJ3HEw_rZyV53-ooc1hUZ_J1oUdBE4ijMmw9XYkBfEHUSsdyx2MZnNaQL5pRvQLIidysIZ0HULn5e6lRXkYc_068L04oZq9ehkaHJQ9y6o9WWuTBNUvn66oEIefrrFnb-EhSffQ0naptTb1hXd3PGVxqsn2u53ooD85P20IbU9AhCYBqB8f4LsFvwvk"/>
-<div class="absolute inset-0 bg-gradient-to-t from-blue-950/80 via-transparent to-transparent opacity-80"></div>
-</div>
-<span class="text-[10px] font-mono tracking-tight text-gray-300 group-hover:text-cs-gold mt-1.5 font-medium truncate w-full text-center tactical-transition">
-              cs_assault
-            </span>
-</div>
-<!-- Map 4: de_aztec -->
-<div class="flex flex-col items-center group cursor-pointer" data-purpose="map-item-aztec">
-<div class="w-full aspect-[4/5] rounded overflow-hidden border border-white/15 group-hover:border-cs-gold relative tactical-transition shadow group-hover:shadow-[0_0_8px_rgba(234,179,8,0.5)]">
-<img alt="de_aztec" class="w-full h-full object-cover object-[80%_center] group-hover:scale-105 tactical-transition" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAaj3X3F__3S2MqU6Ph-GsFpCIZWqFH32H3v_jJHonLLc4AJup3iqMNkGB3BPCQmbVZJk6eBNmjTBN-DPdAejJzQoifDrx3pOGW2IBkIU8dMwcc4bfFhujZCic9VYDC-IKwZu-Bz6GtD76xyWEJ5XF6Zut1KobOU-I47qyG2pWiyqQOVe97LTx6OcQYNjfLdG-5wREQVAxwwrZX_t5EIY3r5Ll9i7a_G1i3VNvP36tEkTI_P8Jku6Ymw5pnjBrjKz6-pcg"/>
-<div class="absolute inset-0 bg-gradient-to-t from-emerald-950/80 via-transparent to-transparent opacity-80"></div>
-</div>
-<span class="text-[10px] font-mono tracking-tight text-gray-300 group-hover:text-cs-gold mt-1.5 font-medium truncate w-full text-center tactical-transition">
-              de_aztec
-            </span>
-</div>
-</div>
+<!-- 功能：首页右侧固定项目交流位，集中展示公众号和QQ群。时间：2026-10-30；作者：lq。 -->
+<section class="tactical-card border border-white/15 rounded-md p-4 text-xs shadow-xl" data-purpose="project-community-card">
+<div class="flex items-center justify-between border-b border-white/10 pb-2.5 mb-3"><div class="flex items-center space-x-2"><span class="text-white font-bold text-sm tracking-wide">项目交流</span><span class="text-gray-500 font-mono text-[11px] uppercase tracking-wider">/ COMMUNITY</span></div><span class="text-gray-500 text-[10px]">免费开源</span></div>
+<div class="sponsor-card"><img data-zoomable src="/support/qq-group.jpg" alt="CS1.5-web版交流群二维码"><div><strong>加入玩家交流群</strong><p>加入 QQ 群，参与素材导入交流、玩法讨论和版本反馈。</p><p class="mt-1 text-gray-500">QQ群：1130466174</p></div></div>
 </section>
-</div>
+  </div>
 <!-- END: Right Panels -->
 </main>
 <!-- END: Main Dashboard Content Body -->
@@ -591,6 +560,8 @@
   <section class="pause-card" role="dialog" aria-modal="true" aria-labelledby="pause-title">
     <h2 id="pause-title">游戏已暂停</h2>
     <p>对局状态已冻结，选择继续即可回到当前回合。</p>
+    <!-- 功能：暂停菜单提供不打断操作的公众号和交流群提示。时间：2026-10-30；作者：lq。 -->
+    <div class="pause-support"><img data-zoomable src="/support/wechat-pay.jpg" alt="微信赞赏码"><div><strong>支持 CS1.5 Web</strong><span>感谢你的赞赏。QQ群：1130466174，欢迎交流素材导入和玩法。</span></div></div>
     <div class="pause-actions">
       <button id="resumeBtn" class="primary" type="button">继续游戏</button>
       <!-- 功能：暂停时直接进入机器人数量与难度设置。时间：2026-10-10；作者：lq。 -->
@@ -614,6 +585,11 @@
     <div id="menu-modal-body"></div>
   </section>
 </div>
+<!-- 功能：点击二维码或宣传图片后显示可关闭的高清预览。时间：2026-10-30；作者：lq。 -->
+<div id="image-preview" hidden role="dialog" aria-modal="true" aria-label="图片预览">
+  <button id="image-preview-close" type="button" aria-label="关闭图片预览">×</button>
+  <img id="image-preview-image" alt="图片预览" />
+</div>
 <!-- BEGIN: Interactive Feedback Script -->
 <script data-purpose="simple-interactive-actions">
     document.addEventListener('DOMContentLoaded', () => {
@@ -636,6 +612,11 @@
           lan: {
             title: '局域网服务器 / LAN SERVERS',
             body: `<table class="lan-table"><thead><tr><th>房间</th><th>地图</th><th>玩家</th><th>延迟</th></tr></thead><tbody><tr><td>CT_Fan001 的训练房</td><td>de_dust2</td><td>3 / 10</td><td>12 ms</td></tr><tr><td>Dust2 经典对战</td><td>de_dust</td><td>6 / 10</td><td>24 ms</td></tr><tr><td>Inferno 夜战</td><td>de_inferno</td><td>2 / 10</td><td>31 ms</td></tr></tbody></table><div class="menu-modal-actions"><button class="primary" data-close-modal>刷新列表</button></div>`
+          },
+          support: {
+            title: '支持作者 / SUPPORT',
+            // 功能：展示作者公众号二维码和玩家交流群二维码。时间：2026-10-30；作者：lq。
+            body: `<div class="menu-modal-grid"><section><h3>微信赞赏</h3><div class="qr-placeholder"><img data-zoomable src="/support/wechat-pay.jpg" alt="微信赞赏码"><span hidden>赞赏码加载失败</span></div><p>感谢支持独立开发。</p></section><section><h3>公众号：非人类程序员</h3><div class="qr-placeholder"><img data-zoomable src="https://nothuman.cc/_next/image?url=%2Fwechat-qr.png&amp;w=384&amp;q=75" alt="非人类程序员公众号二维码"><span hidden>公众号二维码加载失败</span></div><p>扫码关注，获取项目版本更新。</p></section><section><h3>QQ群交流</h3><div class="qr-placeholder"><img data-zoomable src="/support/qq-group.jpg" alt="CS1.5-web版交流群二维码"><span hidden>QQ群二维码加载失败</span></div><p>群号：1130466174。用于玩家交流和本地素材导入答疑。</p></section></div>`
           }
         }[kind];
         if (!content) return;
@@ -646,7 +627,7 @@
         if (kind === 'settings') window.dispatchEvent(new Event('cs15-open-settings'));
       };
       const closeModal = () => { if (modal) modal.hidden = true; };
-      document.querySelectorAll('[data-menu="help"], [data-menu="settings"], [data-menu="lan"]').forEach((item) => item.addEventListener('click', (event) => {
+      document.querySelectorAll('[data-menu="help"], [data-menu="settings"], [data-menu="lan"], [data-menu="support"]').forEach((item) => item.addEventListener('click', (event) => {
         event.preventDefault();
         openModal(item.dataset.menu);
       }));
@@ -655,6 +636,20 @@
         // 功能：动态生成的取消按钮通过事件委托关闭弹窗，设置应用由游戏模块处理。时间：2026-10-10；作者：lq。
         if (event.target instanceof HTMLElement && event.target.closest('[data-close-modal]')) closeModal();
       });
+      // 功能：支持弹窗、首页和暂停菜单中的图片点击放大，遮罩或 Esc 关闭。时间：2026-10-30；作者：lq。
+      const imagePreview = document.getElementById('image-preview');
+      const imagePreviewImage = document.getElementById('image-preview-image');
+      const closeImagePreview = () => { if (imagePreview) imagePreview.hidden = true; };
+      document.addEventListener('click', (event) => {
+        const source = event.target instanceof Element ? event.target.closest('img[data-zoomable]') : null;
+        if (!(source instanceof HTMLImageElement) || !imagePreview || !(imagePreviewImage instanceof HTMLImageElement)) return;
+        imagePreviewImage.src = source.currentSrc || source.src;
+        imagePreviewImage.alt = source.alt || '图片预览';
+        imagePreview.hidden = false;
+      }, true);
+      document.getElementById('image-preview-close')?.addEventListener('click', closeImagePreview);
+      imagePreview?.addEventListener('click', (event) => { if (event.target === imagePreview) closeImagePreview(); });
+      document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeImagePreview(); });
       // Audio click effect simulation
       const buttons = document.querySelectorAll('button, a');
       buttons.forEach(btn => {

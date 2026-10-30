@@ -1,0 +1,39 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "CS 1.5 Web",
+  "version": "0.1.0",
+  "identifier": "cc.nothuman.cs15web",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "CS 1.5 Web",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1024,
+        "minHeight": 640,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": false,
+    "category": "Game",
+    "shortDescription": "浏览器里的 CS 1.5 风格单机 FPS 学习项目",
+    "longDescription": "CS 1.5 Web 是一个开源、免费、仅供学习研究和个人娱乐使用的浏览器风格单机 FPS 项目。",
+    "copyright": "Copyright © 2026 lq",
+    "icon": [
+      "icons/icon.png"
+    ]
+  }
+}
