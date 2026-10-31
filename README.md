@@ -40,7 +40,7 @@ pnpm dev              # 打开终端显示的本地地址
 
 ## 构建与 GitHub Release
 
-本项目提供免费下载的静态发布包和 Tauri 桌面安装包。执行 `pnpm package:release` 会先构建，再生成不含 `public/cstrike/` 原版素材的 `release/cs15-web-snapshot.zip`。仓库中的 `.github/workflows/release.yml` 会在推送 `v1.0.0` 这类标签时自动构建 Windows 安装包、Intel/Apple Silicon 两种 macOS DMG 和网页 ZIP，并创建 GitHub Release。Intel 构建使用 GitHub 当前支持的 `macos-15-intel` runner，Apple Silicon 构建使用 `macos-15`。桌面壳的本地构建需要 Rust，并通过 `pnpm dlx` 获取 Tauri CLI：
+本项目提供免费下载的静态发布包和 Tauri 桌面安装包。执行 `pnpm package:release` 会先构建，再生成不含 `public/cstrike/` 原版素材的 `release/cs15-web-snapshot.zip`。仓库中的 `.github/workflows/release.yml` 会在推送 `v1.0.0` 这类标签时自动构建 Windows 安装包、Intel/Apple Silicon 两种 macOS DMG 和网页 ZIP，并创建 GitHub Release。Intel 构建使用 GitHub 当前支持的 `macos-15-intel` runner，Apple Silicon 构建使用 `macos-latest`。桌面壳的本地构建需要 Rust，并通过 `pnpm dlx` 获取 Tauri CLI：
 
 ```bash
 pnpm package:release
