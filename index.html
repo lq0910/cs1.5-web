@@ -133,6 +133,9 @@
   #pause-menu .pause-card { width: min(360px, calc(100vw - 40px)); padding: 30px 28px 26px; border: 1px solid rgba(234,179,8,.7); border-radius: 8px; background: linear-gradient(145deg, rgba(20,27,35,.98), rgba(7,11,16,.98)); box-shadow: 0 20px 60px rgba(0,0,0,.7), inset 0 0 28px rgba(234,179,8,.06); text-align: center; }
   #pause-menu h2 { margin: 0 0 8px; color: #facc15; font-size: 24px; letter-spacing: .12em; }
   #pause-menu p { margin: 0 0 22px; color: #aeb6bd; font-size: 13px; }
+  /* 功能：鼠标锁定失败时在暂停面板内说明原因，避免玩家以为游戏卡死。时间：2026-10-31；作者：lq。 */
+  #pause-menu #pause-hint { margin: -10px 0 18px; padding: 8px 10px; border: 1px solid rgba(248,113,113,.55); border-radius: 5px; background: rgba(127,29,29,.25); color: #fecaca; font-size: 12px; line-height: 1.5; text-align: left; }
+  #pause-menu #pause-hint[hidden] { display: none !important; }
   #pause-menu .pause-actions { display: grid; gap: 10px; }
   #pause-menu button { padding: 10px 14px; border: 1px solid rgba(255,255,255,.2); border-radius: 4px; background: #202c35; color: #e5e7eb; cursor: pointer; font: inherit; }
   #pause-menu button.primary { border-color: #eab308; background: #80631a; color: #fff4bd; }
@@ -563,6 +566,8 @@
   <section class="pause-card" role="dialog" aria-modal="true" aria-labelledby="pause-title">
     <h2 id="pause-title">游戏已暂停</h2>
     <p>对局状态已冻结，选择继续即可回到当前回合。</p>
+    <!-- 功能：鼠标锁定失败时给出可执行的恢复建议。时间：2026-10-31；作者：lq。 -->
+    <p id="pause-hint" hidden></p>
     <!-- 功能：暂停菜单提供不打断操作的公众号和交流群提示。时间：2026-10-30；作者：lq。 -->
     <div class="pause-support"><img data-zoomable src="/support/wechat-pay.jpg" alt="微信赞赏码"><div><strong>支持 CS1.5 Web</strong><span>感谢你的赞赏。QQ群：1130466174，欢迎交流素材导入和玩法。</span></div></div>
     <div class="pause-actions">

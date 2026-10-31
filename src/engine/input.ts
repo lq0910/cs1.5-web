@@ -45,6 +45,8 @@ export class Input {
 
   readonly element: HTMLElement;
   onLockChange: ((locked: boolean) => void) | null = null;
+  /** 功能：指针锁定被浏览器拒绝时通知界面，避免游戏在无鼠标状态下继续运行。时间：2026-10-31；作者：lq。 */
+  onLockError: ((error?: unknown) => void) | null = null;
   /** 功能：鼠标滚轮切换武器方向回调。时间：2026-09-29；作者：lq。 */
   onWheel: ((direction: number) => void) | null = null;
 
@@ -60,6 +62,7 @@ export class Input {
     window.addEventListener('keyup', this.handleKeyUp);
     window.addEventListener('blur', this.handleBlur);
     document.addEventListener('pointerlockchange', this.handleLockChange);
+    document.addEventListener('pointerlockerror', this.handleLockError);
     document.addEventListener('mousemove', this.handleMouseMove);
     this.element.addEventListener('mousedown', this.handleMouseDown);
     window.addEventListener('mouseup', this.handleMouseUp);
@@ -74,6 +77,7 @@ export class Input {
     window.removeEventListener('keyup', this.handleKeyUp);
     window.removeEventListener('blur', this.handleBlur);
     document.removeEventListener('pointerlockchange', this.handleLockChange);
+    document.removeEventListener('pointerlockerror', this.handleLockError);
     document.removeEventListener('mousemove', this.handleMouseMove);
     this.element.removeEventListener('mousedown', this.handleMouseDown);
     window.removeEventListener('mouseup', this.handleMouseUp);
@@ -127,6 +131,11 @@ export class Input {
     this.onLockChange?.(locked);
   };
 
+  private handleLockError = (): void => {
+    // 功能：Safari/WKWebView 在缺少用户手势或系统不允许锁定时只派发 pointerlockerror；时间：2026-10-31；作者：lq。
+    this.onLockError?.();
+  };
+
   private handleMouseMove = (event: MouseEvent): void => {
     if (document.pointerLockElement !== this.element) return;
     if (performance.now() < this.ignoreMouseMoveUntil) return;
@@ -154,7 +163,15 @@ export class Input {
   };
 
   requestPointerLock(): void {
-    void this.element.requestPointerLock();
+    try {
+      // 功能：新版浏览器返回 Promise，旧版返回 void；两种实现都要把拒绝原因交给界面；时间：2026-10-31；作者：lq。
+      const request = this.element.requestPointerLock() as unknown;
+      if (request instanceof Promise) {
+        void request.catch((error: unknown) => this.onLockError?.(error));
+      }
+    } catch (error) {
+      this.onLockError?.(error);
+    }
   }
 
   get locked(): boolean {

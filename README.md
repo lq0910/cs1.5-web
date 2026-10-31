@@ -69,6 +69,12 @@ APPLE_SIGNING_IDENTITY=- pnpm tauri:build
 
 工作流使用 macOS runner 的原生架构构建，不额外传入同架构 `--target`；这样 Tauri 会从 `src-tauri/target/release` 正确读取主程序。只有在跨架构编译时才需要安装 Rust target，并使用对应的 `target/<架构>/release` 目录。
 
+### macOS 鼠标锁定（Pointer Lock）
+
+macOS 的 WKWebView 默认拒绝网页的 Pointer Lock：只有 WKUIDelegate 实现私有回调 `_webViewDidRequestPointerLock:completionHandler:` 时，`requestPointerLock()` 才会被批准，否则页面只会收到 `pointerlockerror`。Tauri 使用的 wry 没有实现该回调，所以旧版 Mac 安装包进入对局后鼠标无法转向，`pointerlockchange` 也不会触发，Esc 自然停不下游戏。
+
+`src-tauri/src/macos.rs` 会在窗口创建后给 wry 的 UIDelegate 补上该回调，并重新赋值同一个 delegate——`WKWebView.setUIDelegate:` 会重新缓存 `respondsToSelector` 的结果，不重新赋值 WebKit 看不到新方法。这段代码只在 `target_os = "macos"` 下编译，浏览器版、Linux 和 Windows 包不受影响。页面侧也做了兜底：锁定失败会自动暂停并在暂停面板显示原因，Esc 不再依赖锁定状态。改动后必须重新构建并分发 macOS 包，旧包无法靠更新网页资源修复。
+
 主界面的赞赏码和公众号二维码应使用发布者自己的图片，放到 `public/support/` 后再构建。广告可以作为独立、可关闭的展示位接入，但应使用合法广告平台、明确标识广告内容，并避免影响游戏操作；当前仓库没有接入广告 SDK。
 
 桌面安装包和网页 ZIP 都不包含从原版 CS 安装目录提取的地图、模型、贴图和音频，发布包只内置项目自制的 `white_house` 测试地图。若要加载原版素材，用户应自行从自己合法持有的安装中提取，并确认许可后放入本地资源目录。Tauri 壳只能封装资源，不能改变第三方素材的授权状态。

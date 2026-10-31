@@ -65,6 +65,8 @@ const startButton = must<HTMLButtonElement>('startBtn');
 const pauseMenu = must('pause-menu');
 const resumeButton = must<HTMLButtonElement>('resumeBtn');
 const pauseExitButton = must<HTMLButtonElement>('pauseExitBtn');
+// 功能：暂停面板内的锁定失败提示，只在鼠标锁定异常时显示。时间：2026-10-31；作者：lq。
+const pauseHint = must('pause-hint');
 const noMapNotice = must('nomap');
 const crosshair = must('crosshair');
 const scopeOverlay = must('scope');
@@ -331,15 +333,48 @@ function setGameState(started: boolean, paused: boolean): void {
   document.body.classList.toggle('game-paused', gamePaused);
 }
 
+// 功能：鼠标锁定失败的提示文案，说明如何恢复而不是让玩家以为游戏卡死。时间：2026-10-31；作者：lq。
+const LOCK_FAILED_HINT = '鼠标锁定失败，游戏已自动暂停。请点击「继续游戏」重试；如果仍然失败，请更新到最新 macOS 版，或使用浏览器打开。';
+
+function setPauseHint(text: string | null): void {
+  pauseHint.textContent = text ?? '';
+  pauseHint.hidden = !text;
+}
+
+// 功能：暂停时同时释放指针锁定，保证暂停面板能正常点按钮；没有锁定时也照常冻结对局。时间：2026-10-31；作者：lq。
+function pauseGame(hint: string | null = null): void {
+  if (!gameStarted) return;
+  if (input.locked) document.exitPointerLock();
+  setGameState(true, true);
+  setPauseHint(hint);
+}
+
+// 功能：等待 Pointer Lock 生效；被浏览器拒绝或超时则自动暂停并提示，避免无鼠标状态下继续跑回合。时间：2026-10-31；作者：lq。
+let lockRequestId = 0;
+function acquireMouse(): void {
+  const requestId = ++lockRequestId;
+  setPauseHint(null);
+  input.requestPointerLock();
+  window.setTimeout(() => {
+    if (requestId !== lockRequestId || !gameStarted || gamePaused || input.locked) return;
+    pauseGame(LOCK_FAILED_HINT);
+  }, 1200);
+}
+
 // 功能：M 键继续返回主菜单用于重新选择阵营，Esc 则只进入对局暂停层。时间：2026-10-01；作者：lq。
 input.onPress('KeyM', () => {
   if (!input.locked || !gameStarted) return;
   setGameState(false, false);
   document.exitPointerLock();
 });
-// 功能：Esc 释放鼠标时暂停固定步长模拟，防止暂停菜单出现后回合仍继续。时间：2026-10-01；作者：lq。
+// 功能：Esc 不再依赖 pointer lock 状态，Mac 版锁定失败时也能暂停并回到主菜单。时间：2026-10-31；作者：lq。
 input.onPress('Escape', () => {
-  if (gameStarted && input.locked) document.exitPointerLock();
+  if (gameStarted && !gamePaused) pauseGame();
+});
+
+// 功能：窗口失去焦点时自动暂停，避免 Cmd+Tab 后游戏在后台继续跑回合或丢鼠标。时间：2026-10-31；作者：lq。
+window.addEventListener('blur', () => {
+  if (gameStarted && !gamePaused) pauseGame();
 });
 
 let pendingSlot: WeaponSlot | null = null;
@@ -470,12 +505,15 @@ input.onLockChange = (locked) => {
   if (!gameStarted) {
     setGameState(false, false);
   } else if (locked) {
-    setGameState(true, false);
+    // 功能：已经暂停时迟到的锁定立即释放，避免暂停菜单被锁在鼠标后面。时间：2026-10-31；作者：lq。
+    if (gamePaused) document.exitPointerLock();
+    else setGameState(true, false);
   } else {
     setGameState(true, true);
   }
   crosshair.classList.toggle('on', locked && gameStarted && !gamePaused);
   if (locked) {
+    setPauseHint(null);
     void audio.unlock().then(() => {
       audio.retryFailed();
       void audio.preload(soundList());
@@ -483,10 +521,17 @@ input.onLockChange = (locked) => {
   }
 };
 
+// 功能：浏览器拒绝指针锁定时立即暂停，并把原因显示在暂停面板里。时间：2026-10-31；作者：lq。
+input.onLockError = () => {
+  if (!gameStarted) return;
+  lockRequestId++;
+  pauseGame(LOCK_FAILED_HINT);
+};
+
 startButton.addEventListener('click', () => {
   // 功能：快速开始只进入运行态，不再复用暂停菜单的显示逻辑。时间：2026-10-01；作者：lq。
   setGameState(true, false);
-  input.requestPointerLock();
+  acquireMouse();
   void audio.unlock().then(() => {
     audio.retryFailed();
     void audio.preload(soundList());
@@ -496,12 +541,14 @@ startButton.addEventListener('click', () => {
 // 功能：恢复暂停前的同一局比赛，并重新锁定鼠标继续操作。时间：2026-10-01；作者：lq。
 resumeButton.addEventListener('click', () => {
   setGameState(true, false);
-  input.requestPointerLock();
+  acquireMouse();
 });
 
 // 功能：从暂停菜单返回主菜单但保留当前 Match 状态，之后再次开始可继续原回合。时间：2026-10-01；作者：lq。
 pauseExitButton.addEventListener('click', () => {
+  lockRequestId++;
   setGameState(false, false);
+  setPauseHint(null);
   document.exitPointerLock();
 });
 
@@ -544,8 +591,8 @@ renderer.webgl.domElement.addEventListener('click', () => {
   // 功能：暂停时点击游戏画布等同于恢复，主菜单阶段不抢占鼠标。时间：2026-10-01；作者：lq。
   if (gameStarted && gamePaused) {
     setGameState(true, false);
-    input.requestPointerLock();
-  } else if (gameStarted && !input.locked) input.requestPointerLock();
+    acquireMouse();
+  } else if (gameStarted && !input.locked) acquireMouse();
 });
 
 if (params.has('nolock')) {

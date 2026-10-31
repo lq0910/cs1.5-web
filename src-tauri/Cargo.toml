@@ -11,6 +11,11 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 
+# 功能：macOS 版通过私有 UIDelegate 回调补齐 WKWebView 的 Pointer Lock 支持；时间：2026-10-31；作者：lq。
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
+objc2 = "0.6"
+
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
