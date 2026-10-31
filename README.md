@@ -53,7 +53,7 @@ git push origin v0.1.0
 
 macOS 会拦截从浏览器下载的未签名应用，常见提示是“应用已损坏”，而不是在“隐私与安全性”中显示“仍要打开”。`.github/workflows/release.yml` 现在会分别构建 Intel（`x86_64`）和 Apple Silicon（`arm64`）包，并在没有 Apple Developer 证书时使用 ad-hoc 签名，避免 Apple Silicon 包被系统直接判坏。
 
-要让普通用户下载后直接打开，GitHub 仓库需要配置以下 Actions secrets：`APPLE_CERTIFICATE`（Developer ID Application `.p12` 的 base64）、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_ID`、`APPLE_PASSWORD`（Apple ID 专用密码）和 `APPLE_TEAM_ID`。工作流检测到证书后会导入证书、签名并提交 Apple 公证；如果已经配置证书但缺少公证凭据，工作流会停止发布，而不会生成新的不可启动 macOS 包。未配置证书时仍会生成 ad-hoc 包，首次打开需要用户手动允许。
+要让普通用户下载后直接打开，GitHub 仓库需要配置以下 Actions secrets：`APPLE_CERTIFICATE`（Developer ID Application `.p12` 的 base64）、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_ID`、`APPLE_PASSWORD`（Apple ID 专用密码）和 `APPLE_TEAM_ID`。只有这些凭据全部有效时，工作流才会提交 Apple 公证；凭据为空或 `APPLE_TEAM_ID` 少于 3 位时会自动清除公证变量并生成 ad-hoc 包，不会在打包末尾因 Team ID 错误失败。未配置证书的 ad-hoc 包首次打开需要用户手动允许。
 
 已经下载旧版包时，可以先删除隔离属性再打开（确认文件来自本仓库后执行）：
 

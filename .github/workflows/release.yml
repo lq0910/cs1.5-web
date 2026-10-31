@@ -76,13 +76,14 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "${{ matrix.os }}" == macos-* ]]; then
-            if [[ "$APPLE_CERTIFICATE_PRESENT" == "true" ]]; then
-              if [[ -z "$APPLE_ID" || -z "$APPLE_PASSWORD" || -z "$APPLE_TEAM_ID" ]]; then
-                echo "APPLE_ID、APPLE_PASSWORD、APPLE_TEAM_ID 必须与 APPLE_CERTIFICATE 一起配置，才能发布 macOS 公证包。" >&2
-                exit 1
-              fi
+            # 功能说明：只有证书、Apple ID、专用密码和至少 3 位 Team ID 都有效时才启用公证；时间：2026-10-31；作者：lq
+            if [[ "$APPLE_CERTIFICATE_PRESENT" == "true" && -n "$APPLE_ID" && -n "$APPLE_PASSWORD" && ${#APPLE_TEAM_ID} -ge 3 ]]; then
+              echo "检测到完整 Apple 公证凭据，启用签名与公证。"
             else
+              # Tauri 会读取这些固定名称；凭据不完整时必须清掉，避免误进入 notarize 并报 Team ID 错误。
+              unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
               export APPLE_SIGNING_IDENTITY="-"
+              echo "Apple 公证凭据不完整，使用 ad-hoc 签名构建 macOS 包。"
             fi
           fi
           pnpm make-bsp
