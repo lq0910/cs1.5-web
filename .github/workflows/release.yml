@@ -24,14 +24,11 @@ jobs:
         include:
           - os: windows-latest
             label: windows
-            target: ''
           # 功能说明：分别构建 Intel 与 Apple Silicon macOS 安装包，避免用户下载到不兼容架构；时间：2026-10-31；作者：lq
           - os: macos-13
             label: macos-x64
-            target: x86_64-apple-darwin
           - os: macos-14
             label: macos-arm64
-            target: aarch64-apple-darwin
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -47,12 +44,6 @@ jobs:
           cache: pnpm
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
-      # 功能说明：为显式 macOS 目标安装 Rust 编译目标，确保产物架构与下载平台匹配；时间：2026-10-31；作者：lq
-      - name: Install Rust target for macOS
-        if: startsWith(matrix.os, 'macos-')
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
       # 功能说明：有 Apple Developer 证书时导入临时钥匙串，供 Tauri 完成正式签名和公证；时间：2026-10-31；作者：lq
       - name: Import Apple Developer certificate
         if: startsWith(matrix.os, 'macos-') && env.HAS_APPLE_CERTIFICATE == 'true'
@@ -80,6 +71,8 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        # 功能说明：Windows runner 默认使用 PowerShell，显式切换 Git Bash 以执行统一的 Bash 构建脚本；时间：2026-10-31；作者：lq
+        shell: bash
         run: |
           set -euo pipefail
           if [[ "${{ matrix.os }}" == macos-* ]]; then
@@ -93,16 +86,13 @@ jobs:
             fi
           fi
           pnpm make-bsp
-          if [[ -n "${{ matrix.target }}" ]]; then
-            pnpm tauri:build -- --target "${{ matrix.target }}"
-          else
-            pnpm tauri:build
-          fi
+          # 功能说明：macOS runner 原生构建本机架构，使用 target/release，避免显式同架构 --target 造成 Tauri 找错主程序路径；时间：2026-10-31；作者：lq
+          pnpm tauri:build
       - name: Upload desktop artifacts
         uses: actions/upload-artifact@v4
         with:
           name: cs15-web-${{ matrix.label }}
-          path: src-tauri/target/**/release/bundle/**
+          path: src-tauri/target/release/bundle/**
           if-no-files-found: error
       # 功能说明：手动运行时准备发布工件，标签可由发布任务自动生成；时间：2026-10-31；作者：lq
       - name: Prepare desktop assets for GitHub Release
@@ -111,9 +101,9 @@ jobs:
         with:
           name: cs15-web-${{ matrix.label }}-release
           path: |
-            src-tauri/target/**/release/bundle/**/*.exe
-            src-tauri/target/**/release/bundle/**/*.msi
-            src-tauri/target/**/release/bundle/**/*.dmg
+            src-tauri/target/release/bundle/**/*.exe
+            src-tauri/target/release/bundle/**/*.msi
+            src-tauri/target/release/bundle/**/*.dmg
 
   web-zip:
     runs-on: ubuntu-latest

@@ -64,8 +64,10 @@ xattr -dr com.apple.quarantine "/Applications/CS 1.5 Web.app"
 在 Mac 上本地构建时可显式使用同样的 ad-hoc 签名：
 
 ```bash
-APPLE_SIGNING_IDENTITY=- pnpm tauri:build -- --target aarch64-apple-darwin
+APPLE_SIGNING_IDENTITY=- pnpm tauri:build
 ```
+
+工作流使用 macOS runner 的原生架构构建，不额外传入同架构 `--target`；这样 Tauri 会从 `src-tauri/target/release` 正确读取主程序。只有在跨架构编译时才需要安装 Rust target，并使用对应的 `target/<架构>/release` 目录。
 
 主界面的赞赏码和公众号二维码应使用发布者自己的图片，放到 `public/support/` 后再构建。广告可以作为独立、可关闭的展示位接入，但应使用合法广告平台、明确标识广告内容，并避免影响游戏操作；当前仓库没有接入广告 SDK。
 
