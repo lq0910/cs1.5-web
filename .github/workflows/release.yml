@@ -10,7 +10,7 @@ on:
         required: false
         type: string
 
-# 功能说明：默认只读，仅在 publish 任务里显式申请 contents: write，避免令牌权限被仓库默认设置悄悄降级时无处排查；时间：2026-10-31；作者：lq
+# 功能说明：默认只读，仅 publish 任务需要写仓库；注意仓库 Settings → Actions → General → Workflow permissions 必须为 Read and write，实测为只读时任务内声明的 contents: write 也会被降权；时间：2026-10-31；作者：lq
 permissions:
   contents: read
 
@@ -173,27 +173,6 @@ jobs:
           fi
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "Publishing ${tag}"
-      # 功能说明：发布前自检令牌对仓库是否真的具备写权限，把 403 "Resource not accessible by integration" 的锅明确指出来；时间：2026-10-31；作者：lq
-      - name: Verify release token permission
-        shell: bash
-        env:
-          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-          TOKEN_FOR_RELEASE: ${{ secrets.RELEASE_TOKEN || github.token }}
-        run: |
-          set -euo pipefail
-          if [[ -n "${RELEASE_TOKEN}" ]]; then
-            echo "使用的令牌：RELEASE_TOKEN（PAT）"
-          else
-            echo "使用的令牌：GITHUB_TOKEN"
-          fi
-          resp="$(curl -sS -H "Authorization: Bearer ${TOKEN_FOR_RELEASE}" \
-            -H "Accept: application/vnd.github+json" \
-            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}")"
-          echo "${resp}" | jq -c '.permissions // {}'
-          if [[ "$(echo "${resp}" | jq -r '.permissions.push // false')" != "true" ]]; then
-            echo "::error::当前令牌对 ${GITHUB_REPOSITORY} 没有写权限（permissions.push=false），创建 Release 必然 403。请检查 Settings → Actions → General → Workflow permissions 是否为 Read and write permissions；若已被组织策略锁定，请配置 RELEASE_TOKEN 仓库密钥。"
-            exit 1
-          fi
       - name: Publish one GitHub Release
         uses: softprops/action-gh-release@v2
         with:
