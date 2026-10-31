@@ -278,7 +278,8 @@ export class ViewModel {
     const reloadMotion = Math.sin(Math.PI * (1 - reload));
     weapon.position.set(
       pose.x + bobX + this.swayYaw,
-      pose.y + bobY + this.swayPitch - reloadMotion * 0.13 - this.lowered * 0.45,
+      // 功能：蹲下时把第一人称枪械上提，保持枪身和双臂可见；时间：2026-10-31；作者：lq。
+      pose.y + bobY + this.swayPitch + (state.ducked ? 0.18 : 0) - reloadMotion * 0.13 - this.lowered * 0.45,
       pose.z + this.recoil * 0.035,
     );
     weapon.rotation.set(

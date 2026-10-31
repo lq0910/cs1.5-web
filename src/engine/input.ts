@@ -26,6 +26,8 @@ import type { UserCmd } from '../game/movement.ts';
 /** CS 1.5 m_yaw: degrees of view rotation per mouse count. */
 const M_YAW = 0.022;
 const M_PITCH = 0.022;
+// 功能：限制单个模拟步的最大视角变化，防止浏览器一次性上报异常大的 Retina 鼠标增量；时间：2026-10-31；作者：lq。
+const MAX_LOOK_STEP_DEG = 3;
 
 export class Input {
   /** Mouse sensitivity, matching CS' `sensitivity` cvar semantics. */
@@ -36,6 +38,8 @@ export class Input {
   private readonly pressedHandlers = new Map<string, () => void>();
   private mouseDX = 0;
   private mouseDY = 0;
+  // 功能：指针锁定切换时短暂丢弃浏览器产生的高 DPI 鼠标跳变，避免刷新后镜头突然贴地；时间：2026-10-31；作者：lq。
+  private ignoreMouseMoveUntil = 0;
   private mouseButtons = 0;
   private attached = false;
 
@@ -112,6 +116,10 @@ export class Input {
 
   private handleLockChange = (): void => {
     const locked = document.pointerLockElement === this.element;
+    this.mouseDX = 0;
+    this.mouseDY = 0;
+    // 功能：兼容 Retina 与外接显示器在 pointer lock 初始阶段 movementY 不一致的问题；时间：2026-10-31；作者：lq。
+    this.ignoreMouseMoveUntil = locked ? performance.now() + 250 : 0;
     if (!locked) {
       this.keys.clear();
       this.mouseButtons = 0;
@@ -121,8 +129,11 @@ export class Input {
 
   private handleMouseMove = (event: MouseEvent): void => {
     if (document.pointerLockElement !== this.element) return;
-    this.mouseDX += event.movementX;
-    this.mouseDY += event.movementY;
+    if (performance.now() < this.ignoreMouseMoveUntil) return;
+    // 功能：按设备像素比归一化 Retina 与普通显示器的 pointer lock 增量，保持相同鼠标动作对应相同视角；时间：2026-10-31；作者：lq。
+    const pixelRatio = Math.max(1, window.devicePixelRatio || 1);
+    this.mouseDX += event.movementX / pixelRatio;
+    this.mouseDY += event.movementY / pixelRatio;
   };
 
   private handleMouseDown = (event: MouseEvent): void => {
@@ -165,8 +176,9 @@ export class Input {
     // GoldSrc: viewangles.yaw -= dx * M_YAW. Yaw grows anticlockwise (turning
     // left), so moving the mouse right must *decrease* it. Getting this sign
     // wrong is the classic inverted-look bug.
-    const yaw = -this.mouseDX * scale;
-    const pitch = this.mouseDY * M_PITCH * this.sensitivity * (this.inverted ? -1 : 1);
+    const yaw = Math.max(-MAX_LOOK_STEP_DEG, Math.min(MAX_LOOK_STEP_DEG, -this.mouseDX * scale));
+    const rawPitch = this.mouseDY * M_PITCH * this.sensitivity * (this.inverted ? -1 : 1);
+    const pitch = Math.max(-MAX_LOOK_STEP_DEG, Math.min(MAX_LOOK_STEP_DEG, rawPitch));
     this.mouseDX = 0;
     this.mouseDY = 0;
     return { yaw, pitch };

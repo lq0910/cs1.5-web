@@ -313,6 +313,7 @@ let lookYaw = Number.isFinite(Number(params.get('yaw'))) && params.has('yaw') ? 
 let lookPitch = params.has('pitch') ? Number(params.get('pitch')) : 0;
 const MAX_PITCH = 89;
 const playerCmd = makeUserCmd();
+let hasLockedMouse = false;
 
 // --------------------------------------------------------------------- input
 const input = new Input(renderer.webgl.domElement);
@@ -461,6 +462,11 @@ function soundList(): string[] {
 }
 
 input.onLockChange = (locked) => {
+  // 功能：首次进入对局时固定水平视角，避免刷新后的浏览器锁定事件把镜头直接抬向天空；时间：2026-10-31；作者：lq。
+  if (locked && !hasLockedMouse) {
+    lookPitch = 0;
+    hasLockedMouse = true;
+  }
   if (!gameStarted) {
     setGameState(false, false);
   } else if (locked) {
@@ -952,7 +958,8 @@ function frame(now: number): void {
   const punch = playerActor.combat.punchAngle;
   const runtime = playerActor.combat.current();
   const weaponDef = WEAPONS[runtime.id];
-  const alive = playerActor.alive;
+  // 功能：开局暖身与冻结阶段保持本地第一人称，即使上一局的阵亡状态尚未完成回合切换，也不显示放大的观战镜头；时间：2026-10-31；作者：lq。
+  const alive = playerActor.alive || match.mode.phase === 'warmup' || match.mode.phase === 'freeze';
   // 功能：让第一人称模型跟随手雷选择和投掷自动切回枪械。时间：2026-09-29；作者：lq。
   const shownWeapon = playerActor.selectedBomb ? 'c4' : playerActor.selectedGrenade ?? runtime.id;
   viewModel.setWeapon(shownWeapon, shownWeapon === 'c4' ? 'knife' : WEAPONS[shownWeapon].kind);
@@ -985,7 +992,8 @@ function frame(now: number): void {
   viewModel.setVisible(alive);
   // 功能：阵亡后改用墙体避让的第三人称追随镜头，可看到队友模型和场上尸体。时间：2026-09-29；作者：lq。
   if (alive) renderer.setView(
-    v3(playerActor.move.origin.x, playerActor.move.origin.y, playerActor.move.origin.z + (playerActor.move.ducked ? 4 : 17)),
+    // 功能：蹲伏时补偿 hull 中心下移，使用较低但不贴地的 GoldSrc 视线高度；时间：2026-10-31；作者：lq。
+    v3(playerActor.move.origin.x, playerActor.move.origin.y, playerActor.move.origin.z + (playerActor.move.ducked ? 28 : 17)),
     lookPitch + punch.pitch,
     lookYaw + punch.yaw,
   );

@@ -34,6 +34,7 @@ export class WorldRenderer {
   private readonly hemisphere: THREE.HemisphereLight;
   private readonly sun: THREE.DirectionalLight;
   private disposed = false;
+  private readonly viewportSize = new THREE.Vector2();
 
   /** Horizontal FOV in degrees; the AWP scope narrows this. */
   fovHorizontal: number;
@@ -45,7 +46,7 @@ export class WorldRenderer {
       powerPreference: 'high-performance',
       alpha: false,
     });
-    this.webgl.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.webgl.setPixelRatio(displayPixelRatio());
     this.webgl.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(this.webgl.domElement);
 
@@ -67,6 +68,7 @@ export class WorldRenderer {
     this.scene.add(this.worldGroup);
 
     this.scene.fog = new THREE.Fog(0xa8bccd, 1800, 9000);
+    this.resize(container.clientWidth, container.clientHeight);
   }
 
   /** Builds and adds the render geometry for a list of boxes, merged per material. */
@@ -143,8 +145,13 @@ export class WorldRenderer {
   }
 
   resize(width: number, height: number): void {
-    if (width === 0 || height === 0) return;
-    this.webgl.setSize(width, height, false);
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
+    this.viewportSize.set(width, height);
+    const pixelRatio = displayPixelRatio();
+    if (this.webgl.getPixelRatio() !== pixelRatio) this.webgl.setPixelRatio(pixelRatio);
+    // Keep CSS pixels separate from the DPR-scaled drawing buffer. Without the
+    // style update, a Retina canvas displays at 2x size and clips the weapon.
+    this.webgl.setSize(width, height);
     const aspect = width / height;
     this.camera.aspect = aspect;
     this.camera.fov = verticalFovForHorizontal(this.fovHorizontal, aspect);
@@ -179,10 +186,17 @@ export class WorldRenderer {
   setViewScene(scene: THREE.Scene, camera: THREE.PerspectiveCamera): void {
     this.viewScene = scene;
     this.viewCamera = camera;
+    camera.aspect = this.camera.aspect;
+    camera.updateProjectionMatrix();
   }
 
   render(): void {
     if (this.disposed) return;
+    // Moving between displays can change DPR without resizing the container,
+    // so ResizeObserver alone is insufficient. Only reallocate on a change.
+    if (this.webgl.getPixelRatio() !== displayPixelRatio()) {
+      this.resize(this.viewportSize.x, this.viewportSize.y);
+    }
     this.lastStats = renderTwoPass(
       this.webgl,
       this.scene,
@@ -244,6 +258,10 @@ export function renderTwoPass(
   }
 
   return { drawCalls, triangles };
+}
+
+function displayPixelRatio(): number {
+  return Math.min(window.devicePixelRatio || 1, 2);
 }
 
 function byMaterialCount(group: THREE.Group): number {
