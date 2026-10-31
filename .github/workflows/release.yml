@@ -28,7 +28,8 @@ jobs:
           # 功能说明：使用 GitHub 当前支持的 Intel macOS runner，macos-13 已退役；时间：2026-10-31；作者：lq
           - os: macos-15-intel
             label: macos-x64
-          - os: macos-14
+          # 功能说明：使用当前支持的 Apple Silicon runner，macos-14 已进入 brownout 退役流程；时间：2026-10-31；作者：lq
+          - os: macos-15
             label: macos-arm64
     runs-on: ${{ matrix.os }}
     steps:
