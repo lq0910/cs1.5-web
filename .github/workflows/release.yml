@@ -25,7 +25,8 @@ jobs:
           - os: windows-latest
             label: windows
           # 功能说明：分别构建 Intel 与 Apple Silicon macOS 安装包，避免用户下载到不兼容架构；时间：2026-10-31；作者：lq
-          - os: macos-13
+          # 功能说明：使用 GitHub 当前支持的 Intel macOS runner，macos-13 已退役；时间：2026-10-31；作者：lq
+          - os: macos-15-intel
             label: macos-x64
           - os: macos-14
             label: macos-arm64
