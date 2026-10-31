@@ -1,0 +1,115 @@
+- generic [ref=e5]:
+  - banner [ref=e6]:
+    - img "Counter-Strike 1.5 Web" [ref=e8] [cursor=pointer]
+    - navigation [ref=e9]:
+      - link " 主页 HOME" [ref=e10] [cursor=pointer]:
+        - /url: "#"
+        - generic [ref=e11]: 
+        - generic [ref=e12]:
+          - generic [ref=e13]: 主页
+          - generic [ref=e14]: HOME
+      - link " 开始游戏 PLAY" [ref=e15] [cursor=pointer]:
+        - /url: "#"
+        - generic [ref=e16]: 
+        - generic [ref=e17]:
+          - generic [ref=e18]: 开始游戏
+          - generic [ref=e19]: PLAY
+      - text: 
+      - link " 设置 SETTINGS" [ref=e20] [cursor=pointer]:
+        - /url: "#"
+        - generic [ref=e21]: 
+        - generic [ref=e22]:
+          - generic [ref=e23]: 设置
+          - generic [ref=e24]: SETTINGS
+      - text: 
+      - link " 帮助 HELP" [ref=e25] [cursor=pointer]:
+        - /url: "#"
+        - generic [ref=e26]: 
+        - generic [ref=e27]:
+          - generic [ref=e28]: 帮助
+          - generic [ref=e29]: HELP
+      - link " 支持作者 SUPPORT" [ref=e30] [cursor=pointer]:
+        - /url: "#"
+        - generic [ref=e31]: 
+        - generic [ref=e32]:
+          - generic [ref=e33]: 支持作者
+          - generic [ref=e34]: SUPPORT
+  - main [ref=e35]:
+    - generic [ref=e36]:
+      - button " 快速开始 Quick Play Preview " [ref=e37] [cursor=pointer]:
+        - generic [ref=e38]:
+          - generic [ref=e39]: 
+          - generic [ref=e41]:
+            - generic [ref=e42]: 快速开始
+            - generic [ref=e44]: Quick Play
+        - generic [ref=e45]:
+          - img "Preview" [ref=e47]
+          - generic [ref=e48]: 
+      - text:    
+      - button " 导入本地素材 Import Assets " [ref=e49] [cursor=pointer]:
+        - generic [ref=e50]:
+          - generic [ref=e51]: 
+          - generic [ref=e53]:
+            - generic [ref=e54]: 导入本地素材
+            - generic [ref=e55]: Import Assets
+        - generic [ref=e56]: 
+      - button "直接选择 ZIP 素材包" [ref=e57] [cursor=pointer]
+      - paragraph [ref=e58]: 素材只保存在本机浏览器中，不会上传。
+      - button " 游戏设置 Game Settings  " [ref=e59] [cursor=pointer]:
+        - generic [ref=e60]:
+          - generic [ref=e61]: 
+          - generic [ref=e63]:
+            - generic [ref=e64]: 游戏设置
+            - generic [ref=e65]: Game Settings
+        - generic [ref=e66]:
+          - generic [ref=e67]: 
+          - generic [ref=e70]: 
+      - button " 退出游戏 Exit Game " [ref=e71] [cursor=pointer]:
+        - generic [ref=e72]:
+          - generic [ref=e73]: 
+          - generic [ref=e75]:
+            - generic [ref=e76]: 退出游戏
+            - generic [ref=e77]: Exit Game
+        - generic [ref=e78]: 
+    - generic [ref=e80]:
+      - generic [ref=e81]:
+        - generic [ref=e82]:
+          - generic [ref=e83]:
+            - generic [ref=e84]: 最新公告
+            - generic [ref=e85]: / NEWS
+          - link "更多 " [ref=e86] [cursor=pointer]:
+            - /url: https://github.com/lq0910/cs1.5-web/releases
+            - text: 更多
+            - generic [ref=e87]: 
+        - list [ref=e88]:
+          - listitem [ref=e89] [cursor=pointer]:
+            - link "2026-10-30 开发版：Tauri 桌面壳与本地素材导入：增加 Windows/macOS 桌面壳、本地素材导入、版本公告和玩家交流群入口。" [ref=e90]:
+              - /url: https://github.com/lq0910/cs1.5-web/releases
+              - generic [ref=e91]: 2026-10-30
+              - generic [ref=e92]: 开发版：Tauri 桌面壳与本地素材导入：增加 Windows/macOS 桌面壳、本地素材导入、版本公告和玩家交流群入口。
+      - generic [ref=e93]:
+        - generic [ref=e94]:
+          - generic [ref=e95]:
+            - generic [ref=e96]: 项目交流
+            - generic [ref=e97]: / COMMUNITY
+          - generic [ref=e98]: 免费开源
+        - generic [ref=e99]:
+          - img "CS1.5-web版交流群二维码" [ref=e100]
+          - generic [ref=e101]:
+            - strong [ref=e102]: 加入玩家交流群
+            - paragraph [ref=e103]: 加入 QQ 群，参与素材导入交流、玩法讨论和版本反馈。
+            - paragraph [ref=e104]: QQ群：1130466174
+  - contentinfo [ref=e105]:
+    - generic [ref=e106]:
+      - img "Operator Avatar" [ref=e108]
+      - generic [ref=e109]:
+        - generic [ref=e110]: CT_Fan001
+        - generic [ref=e111]:
+          - generic [ref=e112]: Lv. 12
+          - generic [ref=e113]: "|"
+          - generic [ref=e114]: 经验值 3200 / 5000
+    - generic [ref=e117]:
+      - generic [ref=e118]: “经典永不褪色”
+      - generic [ref=e119]:
+        - generic [ref=e120]: ——
+        - generic [ref=e121]: 非人类程序员出品

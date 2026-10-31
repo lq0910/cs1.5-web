@@ -40,13 +40,31 @@ pnpm dev              # 打开终端显示的本地地址
 
 ## 构建与 GitHub Release
 
-本项目提供免费下载的静态发布包和 Tauri 桌面安装包。执行 `pnpm package:release` 会先构建，再生成不含 `public/cstrike/` 原版素材的 `release/cs15-web-snapshot.zip`。仓库中的 `.github/workflows/release.yml` 会在推送 `v1.0.0` 这类标签时自动构建 Windows 安装包、macOS DMG 和网页 ZIP，并创建 GitHub Release。桌面壳的本地构建需要 Rust，并通过 `pnpm dlx` 获取 Tauri CLI：
+本项目提供免费下载的静态发布包和 Tauri 桌面安装包。执行 `pnpm package:release` 会先构建，再生成不含 `public/cstrike/` 原版素材的 `release/cs15-web-snapshot.zip`。仓库中的 `.github/workflows/release.yml` 会在推送 `v1.0.0` 这类标签时自动构建 Windows 安装包、Intel/Apple Silicon 两种 macOS DMG 和网页 ZIP，并创建 GitHub Release。桌面壳的本地构建需要 Rust，并通过 `pnpm dlx` 获取 Tauri CLI：
 
 ```bash
 pnpm package:release
 pnpm tauri:build
 git tag v0.1.0
 git push origin v0.1.0
+```
+
+### macOS 发布与“应用已损坏”
+
+macOS 会拦截从浏览器下载的未签名应用，常见提示是“应用已损坏”，而不是在“隐私与安全性”中显示“仍要打开”。`.github/workflows/release.yml` 现在会分别构建 Intel（`x86_64`）和 Apple Silicon（`arm64`）包，并在没有 Apple Developer 证书时使用 ad-hoc 签名，避免 Apple Silicon 包被系统直接判坏。
+
+要让普通用户下载后直接打开，GitHub 仓库需要配置以下 Actions secrets：`APPLE_CERTIFICATE`（Developer ID Application `.p12` 的 base64）、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_ID`、`APPLE_PASSWORD`（Apple ID 专用密码）和 `APPLE_TEAM_ID`。工作流检测到证书后会导入证书、签名并提交 Apple 公证；如果已经配置证书但缺少公证凭据，工作流会停止发布，而不会生成新的不可启动 macOS 包。未配置证书时仍会生成 ad-hoc 包，首次打开需要用户手动允许。
+
+已经下载旧版包时，可以先删除隔离属性再打开（确认文件来自本仓库后执行）：
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/CS 1.5 Web.app"
+```
+
+在 Mac 上本地构建时可显式使用同样的 ad-hoc 签名：
+
+```bash
+APPLE_SIGNING_IDENTITY=- pnpm tauri:build -- --target aarch64-apple-darwin
 ```
 
 主界面的赞赏码和公众号二维码应使用发布者自己的图片，放到 `public/support/` 后再构建。广告可以作为独立、可关闭的展示位接入，但应使用合法广告平台、明确标识广告内容，并避免影响游戏操作；当前仓库没有接入广告 SDK。
