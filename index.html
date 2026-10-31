@@ -437,6 +437,9 @@
 <i class="fa-solid fa-chevron-right text-xs text-gray-400 group-hover:text-cs-gold group-hover:translate-x-0.5 tactical-transition mr-1"></i>
 </button>
 <input id="localAssetsInput" type="file" webkitdirectory multiple hidden />
+<!-- 功能：允许直接选择本地 ZIP 素材包，文件类型在脚本读取后校验。时间：2026-10-31；作者：lq。 -->
+<button class="mt-1 px-1 text-[10px] text-gray-400 hover:text-cs-gold underline" id="importAssetsZipBtn" type="button">直接选择 ZIP 素材包</button>
+<input id="localAssetsZipInput" type="file" hidden />
 <p id="assetImportStatus" class="px-1 text-[10px] text-gray-500 leading-tight">素材只保存在本机浏览器中，不会上传。</p>
 <!-- 5. Game Settings Button -->
 <button class="tactical-card border border-white/10 hover:border-white/30 w-full h-[62px] rounded px-4 flex items-center justify-between text-left group cursor-pointer overflow-hidden transition-all duration-200 hover:bg-white/[0.08]" data-purpose="action-settings" data-menu="settings">
