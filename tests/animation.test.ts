@@ -12,6 +12,8 @@ import { samplePose } from '../src/engine/mdl/animation.ts';
 import { ActorRenderer, placeWeaponAtHand } from '../src/engine/render/actors.ts';
 import { createActor } from '../src/game/actors.ts';
 import { v3 } from '../src/engine/math.ts';
+import { ViewModel, type ViewModelState } from '../src/engine/render/viewmodel.ts';
+import type { WeaponId } from '../src/game/weapons.ts';
 
 /** 功能：读取本地 CS 模型并计算 WebGL 网格边界。时间：2026-09-29；作者：lq。 */
 function modelBounds(path: string, height?: number, sequence?: string): THREE.Vector3 {
@@ -177,4 +179,61 @@ test('烟雾弹原版模型包含手部与罐体贴图', () => {
   assert.ok(mdl.textures.some((texture) => texture.name === 'body.bmp'));
   assert.ok(mdl.textures.some((texture) => texture.name === 'hand.bmp'));
   assert.ok(findSequence(mdl, 'pullpin'));
+});
+
+/** Exercise the actual viewmodel update with real meshes, without requiring a
+ * browser canvas for the muzzle texture or asynchronous asset loading. */
+function viewModelFixture(id: WeaponId, modelName: string) {
+  const studio = buildStudio(parseMdl(new Uint8Array(readFileSync(`public/cstrike/models/v_${modelName}.mdl`))));
+  studio.scale.multiplyScalar(1.2);
+  const weapon = new THREE.Group();
+  weapon.add(studio);
+  const viewModel = Object.assign(Object.create(ViewModel.prototype), {
+    weaponId: id, weapon, studio,
+    muzzleFlash: new THREE.Sprite(new THREE.SpriteMaterial()),
+    bobPhase: 0, swayPitch: 0, swayYaw: 0, lastPitch: 0, lastYaw: 0,
+    recoil: 0, lowered: 0, actionSequence: '', shootTimer: 0,
+    knifeActionTime: 0, flashTimer: 0,
+  }) as ViewModel;
+  const state: ViewModelState = {
+    speed: 0, onGround: true, ducked: false, scoped: false,
+    reloadProgress: 0, deployProgress: 0, grenadeAction: null,
+    grenadeActionEndTime: 0, bombPlantProgress: 0, now: 0,
+    punch: { pitch: 0, yaw: 0 }, pitch: 0, yaw: 0,
+  };
+  return { viewModel, weapon, studio, state };
+}
+
+for (const [id, modelName] of [
+  ['ak47', 'ak47'], ['m4a1', 'm4a1'], ['awp', 'awp'],
+  ['glock18', 'glock18'], ['mp5navy', 'mp5'], ['knife', 'knife'],
+] as const) {
+  test(`${id}: crouching must not lift the hands out of their camera-relative resting pose`, () => {
+    const { viewModel, weapon, studio, state } = viewModelFixture(id, modelName);
+    viewModel.update(1 / 60, state);
+    const standingPosition = weapon.position.clone();
+    const standingBounds = new THREE.Box3().setFromObject(weapon);
+    const standingScale = studio.scale.clone();
+    const standingRotation = weapon.quaternion.clone();
+    for (const ducked of [true, false, true, false]) {
+      viewModel.update(1 / 60, { ...state, ducked });
+      assert.ok(weapon.position.equals(standingPosition), `crouch added an offset: ${weapon.position.toArray()}`);
+      assert.ok(new THREE.Box3().setFromObject(weapon).equals(standingBounds), 'hand and weapon bounds must stay attached to the lower screen');
+      assert.ok(studio.scale.equals(standingScale), 'crouch must not change model scale');
+      assert.ok(weapon.quaternion.equals(standingRotation), 'crouch must not tilt the resting weapon');
+    }
+  });
+}
+
+test('crouched movement retains reduced bob rather than a permanent vertical offset', () => {
+  const standing = viewModelFixture('ak47', 'ak47');
+  const crouched = viewModelFixture('ak47', 'ak47');
+  const moving = { ...standing.state, speed: 150 };
+  standing.viewModel.update(1 / 60, moving);
+  crouched.viewModel.update(1 / 60, { ...moving, ducked: true });
+  const standingBob = Math.abs(standing.weapon.position.y + 0.2);
+  const crouchedBob = Math.abs(crouched.weapon.position.y + 0.2);
+  assert.ok(standingBob > 0 && crouchedBob > 0);
+  assert.ok(crouchedBob < standingBob, 'crouch should reduce bob amplitude');
+  assert.ok(Math.abs(crouchedBob / standingBob - 0.012 / 0.026) < 1e-9);
 });
