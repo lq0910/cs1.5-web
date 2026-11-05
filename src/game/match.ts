@@ -159,6 +159,8 @@ export class Match {
   readonly player: Actor | null = null;
   private readonly brains = new Map<number, BotBrain>();
   private readonly world: CollisionWorld;
+  /** 功能：保留地图实体控制器与军械点数据，供回合初始化和固定 tick 更新；时间：2026-11-05；作者：lq。 */
+  private readonly map: MapData;
   private readonly graph: NavGraph | null;
   private readonly sites: ObjectiveArea[];
   private readonly skill: number;
@@ -204,6 +206,7 @@ export class Match {
 
   constructor(options: MatchOptions) {
     this.world = options.map.collision;
+    this.map = options.map;
     this.graph = options.graph;
     this.sites = options.sites;
     // 功能：默认使用简单 BOT 难度，降低玩家遭遇的命中与反应压力。时间：2026-09-29；作者：lq。
@@ -357,6 +360,9 @@ export class Match {
     this.mode.startRound(this.actors, this.spawns, now, events);
     this.prepareBotRound();
     this.droppedWeapons.length = 0;
+    // 功能：手动重开对局时恢复地图门体和原版地面军械点；时间：2026-11-05；作者：lq。
+    this.map.interactions?.reset();
+    this.restoreMapWeapons(now);
     this.autoBuyBots(now);
   }
 
@@ -396,6 +402,23 @@ export class Match {
         position: actor === carrier ? destination : this.spreadGoal(actor, destination, actor.team === 'ct' ? 360 : 240),
         kind: actor === carrier ? 'site' : 'patrol',
       });
+    }
+  }
+
+  /** 功能：按 Iceworld armoury_entity 编号在原位置摆放枪械，每回合补回且沿用 E 拾枪规则；时间：2026-11-05；作者：lq。 */
+  private restoreMapWeapons(now: number): void {
+    const bsp = this.map.bsp as import('../engine/bsp/types.ts').BspFile | undefined;
+    const items: WeaponId[] = ['mp5navy', 'tmp', 'p90', 'mac10', 'ak47', 'sg552', 'm4a1', 'aug',
+      'scout', 'g3sg1', 'awp', 'm3', 'xm1014', 'm249'];
+    for (const entity of bsp?.entityList ?? []) {
+      if (entity.classname !== 'armoury_entity' || !entity.origin) continue;
+      const weapon = items[Number(entity.properties.item ?? 0)];
+      if (!weapon) continue;
+      const origin = entity.origin;
+      const floor = this.world.traceHull(POINT_HULL, v3(origin.x, origin.y, origin.z + 32), v3(origin.x, origin.y, origin.z - 256));
+      if (floor.startsolid || floor.fraction >= 1) continue;
+      this.droppedWeapons.push({ id: this.nextDroppedWeaponId++, weapon: makeWeaponRuntime(weapon),
+        position: v3(floor.endpos.x, floor.endpos.y, floor.endpos.z + 3), yaw: 0, availableAt: now });
     }
   }
 
@@ -598,8 +621,13 @@ export class Match {
       this.grenadeProjectiles.length = 0;
       // 功能：每局开始清空上一局地面的枪械，防止跨回合重复拾取。时间：2026-09-29；作者：lq。
       this.droppedWeapons.length = 0;
+      // 功能：自然换局与手动开局使用一致的门体重置及地面枪械恢复；时间：2026-11-05；作者：lq。
+      this.map.interactions?.reset();
+      this.restoreMapWeapons(now);
       this.autoBuyBots(now);
     }
+    // 功能：共享模拟步长驱动门，自动开门同时适用于玩家与 BOT，暂停不计时；时间：2026-11-05；作者：lq。
+    this.map.interactions?.update(this.dt, this.actors.filter((actor) => actor.alive).map((actor) => ({ origin: actor.move.origin, hull: actor.move.hull })));
     // 功能：对局进行时按固定模拟步长推进小鸡游走，暂停和回合冻结时停步。时间：2026-10-21；作者：lq。
     if (this.mode.phase === 'live') updateCritters(this.critters, this.world, this.dt, now, this.randomness);
     // 功能：C4 倒计时归零后按爆心距离结算伤害，保留原版爆炸会杀伤附近角色的玩法。时间：2026-09-30；作者：lq。
@@ -782,6 +810,8 @@ export class Match {
       actor.move.angles.roll = 0;
       // 功能：保存装包前的 C4 选择状态，完成安装的同一帧仍阻止枪械误击。时间：2026-09-30；作者：lq。
       const bombWasSelected = actor.selectedBomb;
+      // 功能：E 键对准门时发出使用请求，保留现有拾枪与拆包路径；时间：2026-11-05；作者：lq。
+      if (command.buttons & IN_USE) this.map.interactions?.use(actorEye(actor), aimDirection(command.pitch, command.yaw));
       pmPlayerMove(actor.move, this.world, cmd, this.dt);
       // 功能：持包 T 在包点按住左键安装；CT 靠近炸弹按住 E 拆除，松键立即中断。时间：2026-09-30；作者：lq。
       if (actor === this.player) {

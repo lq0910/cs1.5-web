@@ -1,13 +1,14 @@
 {
   "name": "cs15-web",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "description": "Browser-based Counter-Strike 1.5 style FPS (GoldSrc-faithful movement + BSP maps)",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "package:release": "pnpm make-bsp && pnpm build && node tools/package-release.mjs",
+    "package:assets": "node tools/package-assets.mjs",
     "tauri:build": "pnpm dlx @tauri-apps/cli@^2 build",
     "preview": "vite preview --host 127.0.0.1",
     "typecheck": "tsc --noEmit",

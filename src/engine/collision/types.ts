@@ -49,7 +49,12 @@ export interface CollisionWorld {
   traceHull(hull: Hull, start: Vec3, end: Vec3): TraceResult;
   /** GoldSrc contents value at a point: 0 = empty, CONTENTS_SOLID = -2. */
   pointContents(p: Vec3): number;
+  /** 功能：实体 BSP 可提供真实梯子触发体，普通盒子地图保持原移动行为；时间：2026-11-05；作者：lq。 */
+  ladderAt?(hull: Hull, origin: Vec3): LadderContact | null;
 }
+
+/** 功能：提供梯子法线及高度范围，供共享移动代码控制攀爬、顶部离梯和跳离；时间：2026-11-05；作者：lq。 */
+export interface LadderContact { normal: Vec3; mins: Vec3; maxs: Vec3 }
 
 /**
  * GoldSrc contents flags (subset).

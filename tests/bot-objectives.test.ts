@@ -169,8 +169,8 @@ test('bots resume a released player defuse and replace a dead defuser within the
   assert.ok(defused, 'another bot should finish after the first defuser dies');
 });
 
-// 功能：验证 BOT 长距离执行任务会跑刀、看见敌人会切回主武器，避免持枪慢跑或持刀贴脸。时间：2026-11-05；作者：lq。
-test('bot changes equipment with travel and combat context', () => {
+// 功能：验证 BOT 巡逻保持枪械、看见敌人切回主武器，避免整队赶路只显示刀具；时间：2026-11-05；作者：lq。
+test('bot keeps a gun equipped while travelling and draws its primary in combat', () => {
   const start = graph.nodes[nearestNode(graph, spawns[0]!.origin)]!;
   const actor = createActor({ name: 'runner', team: 't', isBot: true,
     spawn: { x: start.x, y: start.y, z: start.z }, yaw: 0,
@@ -180,7 +180,7 @@ test('bot changes equipment with travel and combat context', () => {
   const goal = { position: { x: start.x + 220, y: start.y, z: start.z }, kind: 'patrol' as const };
   const travel = brain.think(TICK_INTERVAL, { world, graph, self: actor, enemies: [], goal,
     now: 1, skill: 0, canPlant: false, canDefuse: false });
-  assert.equal(travel.switchTo, 3, 'a travelling bot should keep the knife out');
+  assert.equal(travel.switchTo, 1, 'a travelling bot that has a rifle should switch back from the knife');
 
   const enemy = createActor({ name: 'target', team: 'ct', isBot: true,
     spawn: { x: start.x + 96, y: start.y, z: start.z }, yaw: 180,

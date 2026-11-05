@@ -17,6 +17,8 @@ import type { MapData, MapSpawn } from './build.ts';
 import { buildWhiteHouse } from './whitehouse.ts';
 import { parseBsp, bspStats } from '../../engine/bsp/reader.ts';
 import { BspCollisionWorld } from '../../engine/bsp/collision.ts';
+// 功能：为 Assault 单独启用实体墙、门和梯子，避免改变其他已验收 BSP 的玩法；时间：2026-11-05；作者：lq。
+import { BspEntityWorld } from './interactions.ts';
 import { buildBspMeshes } from '../../engine/bsp/geometry.ts';
 import { parseWad3 } from '../../engine/bsp/wad.ts';
 import type { BspMiptex } from '../../engine/bsp/types.ts';
@@ -148,7 +150,8 @@ export interface LoadedMap {
  * Map preference: the requested map first, then the classic CS maps if the user
  * has extracted them, then the built-in test map (always available).
  */
-const DEFAULT_BSP_CHAIN = ['de_dust2', 'cs_estate', 'white_house'];
+// 功能：沙漠2保持默认图，仓库和雪地仅显式选择时加载，缺少素材时使用内置测试图；时间：2026-11-05；作者：lq。
+const DEFAULT_BSP_CHAIN = ['de_dust2', 'white_house'];
 
 /** Asset root; anything extracted from the user's CS install lives under here. */
 export const CSTRIKE_ASSET_ROOT = 'cstrike';
@@ -217,9 +220,11 @@ export function spawnsFromBsp(data: ReturnType<typeof parseBsp>): MapSpawn[] {
 
     // GoldSrc spawns sit at the entity origin (the hull centre); nudge up a
     // little so the player does not start embedded in the floor.
+    // 功能：兼容 Iceworld 等社区图使用的 angles 三元组，避免把 CT/T 朝向读成同一个零度；时间：2026-11-05；作者：lq。
+    const entityYaw = Number(entity.properties['angles']?.trim().split(/\s+/)[1]);
     spawns.push({
       origin: v3(entity.origin.x, entity.origin.y, entity.origin.z + 1),
-      yaw: entity.angle,
+      yaw: Number.isFinite(entityYaw) ? entityYaw : entity.angle,
       team,
     });
   }
@@ -330,14 +335,34 @@ async function loadBspMap(name: string): Promise<LoadedMap | null> {
   const tuning = new URLSearchParams(query);
   const lightGamma = Number(tuning.get('lm'));
   const lightOverbright = Number(tuning.get('lmi'));
+  // 功能：提高 cs_assault 原版仓库内景亮度，同时保留烘焙阴影；URL lmi 可单独覆盖。时间：2026-11-05；作者：lq。
+  const defaultOverbright = name === 'cs_assault' ? 3 : undefined;
+  // 功能：动态门几何与碰撞按同一子模型编号绑定，旋转门使用原 BSP 局部坐标及 origin；时间：2026-11-05；作者：lq。
+  const doorModels = name === 'cs_assault' ? bsp.entityList
+    .filter((entity) => ['func_door', 'func_door_rotating'].includes(entity.classname))
+    .map((entity) => Number(entity.properties.model?.slice(1))).filter(Number.isFinite) : [];
+  // 功能：只渲染门、墙、按钮等可见实体 brush；买区和触发器仍参与原逻辑但不遮挡地图；时间：2026-11-05；作者：lq。
+  const visibleModels = bsp.entityList
+    .filter((entity) => ['func_wall', 'func_breakable', 'func_button', 'func_door', 'func_door_rotating', 'func_train', 'func_illusionary'].includes(entity.classname))
+    .map((entity) => Number(entity.properties.model?.slice(1)))
+    .filter((index) => Number.isInteger(index) && index > 0);
   const meshes = buildBspMeshes(bsp, {
+    dynamicModels: doorModels,
+    visibleModels,
     wadTextures: wads.textures,
     ...(Number.isFinite(lightGamma) && lightGamma > 0 ? { lightGamma } : {}),
     ...(Number.isFinite(lightOverbright) && lightOverbright > 0
       ? { lightOverbright }
-      : {}),
+      : defaultOverbright ? { lightOverbright: defaultOverbright } : {}),
   });
-  const collision = new BspCollisionWorld(bsp);
+  // 功能：姿态从 GoldSrc Z-up 转成 Three.js Y-up，让门体视觉和物理同时开合；时间：2026-11-05；作者：lq。
+  const interactions = name === 'cs_assault' ? new BspEntityWorld(bsp, (index, pose) => {
+    const object = meshes.modelGroups.get(index);
+    if (!object) return;
+    object.position.set(pose.origin.x, pose.origin.z, -pose.origin.y);
+    object.rotation.y = pose.yaw * Math.PI / 180;
+  }) : undefined;
+  const collision = interactions ?? new BspCollisionWorld(bsp);
   const rawSpawns = spawnsFromBsp(bsp);
   const spawns = rawSpawns.map((spawn) => ({
     ...spawn,
@@ -361,6 +386,7 @@ async function loadBspMap(name: string): Promise<LoadedMap | null> {
 
   const world = bsp.models[0]!;
   const map: MapData = {
+    interactions,
     name: `BSP: ${name}`,
     bounds: {
       mins: v3(world.mins.x, world.mins.y, world.mins.z),
@@ -400,7 +426,9 @@ async function loadBspMap(name: string): Promise<LoadedMap | null> {
  */
 export async function loadMap(requested?: string | null): Promise<LoadedMap> {
   const candidates: string[] = [];
-  if (requested) candidates.push(requested);
+  // 功能：iceworld 使用规范地图文件名 fy_iceworld，兼容简写入口并过滤路径字符；时间：2026-11-05；作者：lq。
+  const target = requested === 'iceworld' ? 'fy_iceworld' : requested;
+  if (target && /^[a-z0-9_-]+$/i.test(target)) candidates.push(target);
   for (const name of DEFAULT_BSP_CHAIN) {
     if (!candidates.includes(name)) candidates.push(name);
   }

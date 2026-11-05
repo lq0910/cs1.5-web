@@ -506,6 +506,15 @@
 <div class="flex-1 pointer-events-none"></div>
 <!-- BEGIN: Right Panels (Release News) -->
 <div class="w-[370px] flex flex-col space-y-4 shrink-0" data-purpose="right-information-panel">
+<!-- 功能：首页右侧提供 Dust2 默认图、Assault 白房子和 Iceworld 雪地图直达切换；时间：2026-11-05；作者：lq。 -->
+<section class="tactical-card border border-yellow-400/25 rounded-md p-4 text-xs shadow-xl" data-purpose="map-switch-card">
+<div class="flex items-center justify-between border-b border-white/10 pb-2.5 mb-3"><div class="flex items-center space-x-2"><span class="text-white font-bold text-sm tracking-wide">地图切换</span><span class="text-gray-500 font-mono text-[11px] uppercase tracking-wider">/ MAPS</span></div><span class="text-cs-gold text-[10px]">Dust2 默认</span></div>
+<div class="grid grid-cols-3 gap-2">
+<button type="button" data-map-choice="de_dust2" aria-pressed="false" class="map-choice rounded border border-white/10 bg-black/20 px-2 py-2.5 text-left hover:border-yellow-400/50 hover:bg-white/[0.06] focus-visible:ring-1 focus-visible:ring-cs-gold tactical-transition"><strong class="block text-gray-200 text-[11px]">沙漠2</strong><span class="mt-1 block text-gray-400 font-mono text-[9px]">de_dust2</span></button>
+<button type="button" data-map-choice="cs_assault" aria-pressed="false" class="map-choice rounded border border-white/10 bg-black/20 px-2 py-2.5 text-left hover:border-yellow-400/50 hover:bg-white/[0.06] focus-visible:ring-1 focus-visible:ring-cs-gold tactical-transition"><strong class="block text-gray-200 text-[11px]">白房子</strong><span class="mt-1 block text-gray-400 font-mono text-[9px]">cs_assault</span></button>
+<button type="button" data-map-choice="fy_iceworld" aria-pressed="false" class="map-choice rounded border border-white/10 bg-black/20 px-2 py-2.5 text-left hover:border-yellow-400/50 hover:bg-white/[0.06] focus-visible:ring-1 focus-visible:ring-cs-gold tactical-transition"><strong class="block text-gray-200 text-[11px]">雪地小图</strong><span class="mt-1 block text-gray-400 font-mono text-[9px]">iceworld</span></button>
+</div>
+</section>
 <!-- Card 1: Latest News / Announcements -->
 <section class="tactical-card border border-white/15 rounded-md p-4 text-xs shadow-xl" data-purpose="news-announcements-card">
 <!-- Header -->
@@ -623,7 +632,13 @@
         const content = {
           help: {
             title: '游戏帮助 / HELP',
-            body: `<div class="menu-modal-grid"><section><h3>移动与视角</h3><ul><li>W / A / S / D：移动</li><li>鼠标：观察与瞄准</li><li>Space：跳跃　Ctrl：蹲下</li><li>Shift：静步移动</li></ul></section><section><h3>战斗操作</h3><ul><li>鼠标左键：开火</li><li>鼠标右键：开镜或刀捅</li><li>R：换弹　G：丢枪　E：拾枪</li><li>1 / 2 / 3：主武器、手枪、刀</li></ul></section><section><h3>装备快捷键</h3><ul><li>4：高爆手雷　5：闪光弹</li><li>6：烟雾弹　Q / 滚轮：切换装备</li><li>B：购买菜单　Tab：战绩面板</li></ul></section><section><h3>对局功能</h3><ul><li>M：重新选择阵营</li><li>K：回到出生点</li><li>F：切换调试穿墙飞行</li><li>Esc：释放鼠标</li></ul></section></div>`
+            // 功能：帮助页仅列出已绑定键位，移除无实现的 K/F，并补充 C 蹲下和 T 喷漆；时间：2026-11-05；作者：lq。
+            body: `<div class="menu-modal-grid"><section><h3>移动与视角</h3><ul><li>W / A / S / D 或方向键：移动</li><li>鼠标：观察与瞄准</li><li>Space：跳跃　Ctrl / C：按住蹲下</li><li>Shift：静步移动</li></ul></section><section><h3>战斗操作</h3><ul><li>鼠标左键：开火</li><li>鼠标右键：开镜或刀捅</li><li>R：换弹　G：丢枪　E：拾枪</li><li>1 / 2 / 3：主武器、手枪、刀</li></ul></section><section><h3>装备快捷键</h3><ul><li>4：高爆手雷　5：闪光弹 / T 阵营 C4</li><li>6：烟雾弹　Q / 滚轮：切换装备</li><li>B：购买菜单　Tab：战绩面板</li></ul></section><section><h3>对局功能</h3><ul><li>M：回到主菜单并重新选择阵营</li><li>T：喷漆　Esc：暂停并释放鼠标</li></ul></section></div>`
+          },
+          create: {
+            title: '创建房间 / CREATE SERVER',
+            // 功能：提供默认 Dust2、可选 Assault / Iceworld 与内置地图入口，显示实际载入地图并在游戏就绪后允许切换；时间：2026-11-05；作者：lq。
+            body: `<p class="setting-hint">当前地图：<strong id="current-map-name">地图加载中…</strong></p><div class="setting-row"><label for="room-map">选择地图</label><select id="room-map"><option value="de_dust2">沙漠2（默认） · de_dust2</option><option value="cs_assault">白房子 / 72街仓库 · cs_assault</option><option value="fy_iceworld">雪地小图 · fy_iceworld</option><option value="white_house">内置移动测试图 · white_house</option></select></div><p class="setting-hint">仓库：靠近门自动开启，也可对准门按 E；贴近梯子按 W / S 攀爬，Space 跳离。雪地：四掩体近距离对战，靠近地面枪械按 E 更换。人质救援尚未实现。</p><p class="setting-note">原版地图需先导入本地素材；缺少所选地图时会回退到可用地图。切换地图将重新开局。</p><div class="menu-modal-actions"><button data-close-modal>取消</button><button id="start-selected-map" class="primary" disabled>载入地图</button></div>`
           },
           settings: {
             title: '游戏设置 / SETTINGS',
@@ -646,9 +661,11 @@
         modal.hidden = false;
         // 功能：通知游戏模块按当前地图容量和实际设置初始化控件。时间：2026-10-10；作者：lq。
         if (kind === 'settings') window.dispatchEvent(new Event('cs15-open-settings'));
+        // 功能：让地图选择面板同步实际加载结果，避免把素材回退后的地图标成 Assault；时间：2026-11-05；作者：lq。
+        if (kind === 'create') window.dispatchEvent(new Event('cs15-open-map-menu'));
       };
       const closeModal = () => { if (modal) modal.hidden = true; };
-      document.querySelectorAll('[data-menu="help"], [data-menu="settings"], [data-menu="lan"], [data-menu="support"]').forEach((item) => item.addEventListener('click', (event) => {
+      document.querySelectorAll('[data-menu="help"], [data-menu="settings"], [data-menu="lan"], [data-menu="support"], [data-menu="create"]').forEach((item) => item.addEventListener('click', (event) => {
         event.preventDefault();
         openModal(item.dataset.menu);
       }));

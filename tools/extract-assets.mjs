@@ -17,7 +17,7 @@
  * public/cstrike/ is git-ignored.
  */
 
-import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -38,6 +38,8 @@ function argValue(name, fallback = null) {
 
 const gameDirArg = argValue('--game');
 const mapArg = argValue('--map');
+// 功能：支持导入独立社区 BSP（例如 fy_iceworld），贴图仍从本地原版安装中提取；时间：2026-11-05；作者：lq。
+const bspArg = argValue('--bsp');
 const all = args.includes('--all');
 const outDir = resolve(projectRoot, argValue('--out', 'public/cstrike'));
 
@@ -132,7 +134,8 @@ function preferredWads(bsp) {
 }
 
 function convertMap(mapName, index, sourceCache) {
-  const bspPath = join(game.cstrike, 'maps', `${mapName}.bsp`);
+  // 功能：独立 BSP 只在单图模式生效，避免 --all 把同一文件重复命名导入；时间：2026-11-05；作者：lq。
+  const bspPath = bspArg && !all ? resolve(bspArg) : join(game.cstrike, 'maps', `${mapName}.bsp`);
   if (!statSync(bspPath, { throwIfNoEntry: false })) {
     return { mapName, error: '找不到 .bsp' };
   }
@@ -165,6 +168,22 @@ function convertMap(mapName, index, sourceCache) {
 
   mkdirSync(join(outDir, 'maps'), { recursive: true });
   writeFileSync(join(outDir, 'maps', `${mapName}.bsp`), raw);
+
+  // 功能：复制地图指定的六面天空盒，兼容安装目录大小写，确保雪地图不会显示错误天空；时间：2026-11-05；作者：lq。
+  const sky = bsp.entityList.find((entity) => entity.classname === 'worldspawn')?.properties.skyname;
+  if (sky && /^[a-z0-9_-]+$/i.test(sky)) {
+    for (const suffix of ['rt', 'lf', 'up', 'dn', 'ft', 'bk']) {
+      const target = `${sky}${suffix}.tga`.toLowerCase();
+      for (const root of [game.cstrike, game.valve]) {
+        const env = join(root, 'gfx', 'env');
+        const found = listFiles(env, '.tga').find((file) => file.toLowerCase() === target);
+        if (!found) continue;
+        mkdirSync(join(outDir, 'gfx', 'env'), { recursive: true });
+        copyFileSync(join(env, found), join(outDir, 'gfx', 'env', target));
+        break;
+      }
+    }
+  }
 
   let wadBytes = 0;
   if (found.length > 0) {

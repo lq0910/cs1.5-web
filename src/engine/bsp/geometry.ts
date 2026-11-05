@@ -36,6 +36,8 @@ import type { BspFile, BspMiptex } from './types.ts';
 
 export interface BspMeshResult {
   group: THREE.Group;
+  /** 功能：独立活动门网格与静态场景共享原版贴图/光照 atlas，由实体模拟更新姿态；时间：2026-11-05；作者：lq。 */
+  modelGroups: Map<number, THREE.Group>;
   faceCount: number;
   triangleCount: number;
   textureCount: number;
@@ -160,7 +162,8 @@ function miptexToTexture(
     };
   }
 
-  return { texture: dataTextureFromPalette(width, height, pixels, palette), resolvedFromWad };
+  // 功能：GoldSrc 的 { 前缀贴图以调色板索引 255 镂空，恢复 Assault 梯子、铁丝网和栏杆；时间：2026-11-05；作者：lq。
+  return { texture: dataTextureFromPalette(width, height, pixels, palette, texture.name.startsWith('{')), resolvedFromWad };
 }
 
 function dataTextureFromPalette(
@@ -168,6 +171,8 @@ function dataTextureFromPalette(
   height: number,
   pixels: Uint8Array,
   palette: Uint8Array,
+  // 功能：普通贴图的索引 255 仍是实色，仅对原版镂空贴图启用透明；时间：2026-11-05；作者：lq。
+  masked = false,
 ): THREE.Texture {
   const rgba = new Uint8Array(width * height * 4);
   for (let i = 0; i < width * height; i++) {
@@ -176,7 +181,7 @@ function dataTextureFromPalette(
     rgba[i * 4] = palette[base] ?? 200;
     rgba[i * 4 + 1] = palette[base + 1] ?? 200;
     rgba[i * 4 + 2] = palette[base + 2] ?? 200;
-    rgba[i * 4 + 3] = 255;
+    rgba[i * 4 + 3] = masked && colorIndex === 255 ? 0 : 255;
   }
 
   const texture = new THREE.DataTexture(rgba, width, height, THREE.RGBAFormat);
@@ -191,6 +196,10 @@ function dataTextureFromPalette(
 }
 
 export interface BspMeshOptions {
+  /** 功能：按 BSP 子模型拆分活动门，防止门被永久合并在仓库墙面中；时间：2026-11-05；作者：lq。 */
+  dynamicModels?: number[];
+  /** 功能：仅绘制世界模型及明确可见的实体子模型，隐藏买区/触发器等不可见 brush；时间：2026-11-05；作者：lq。 */
+  visibleModels?: number[];
   /** 功能：可选手动 gamma 校准，省略时使用默认亮度表；不等同于引擎 lightgamma。时间：2026-11-05；作者：lq。 */
   lightGamma?: number;
   /** Lightmap multiplier before the gamma table (the Quake lineage uses 2). */
@@ -201,6 +210,23 @@ export interface BspMeshOptions {
 
 export function buildBspMeshes(bsp: BspFile, options: BspMeshOptions = {}): BspMeshResult {
   const group = new THREE.Group();
+  // 功能：为活动子模型建立独立变换组，其余材质仍合并以保持渲染性能；时间：2026-11-05；作者：lq。
+  const modelGroups = new Map<number, THREE.Group>();
+  const faceModels = new Map<number, number>();
+  const visibleModels = new Set(options.visibleModels ?? []);
+  // 功能：解析每张面所属的 BSP 子模型，避免把买区、触发器 brush 当作世界几何画出来；时间：2026-11-05；作者：lq。
+  for (const [modelIndex, model] of bsp.models.entries()) {
+    if (modelIndex === 0) continue;
+    for (let face = model.firstface; face < model.firstface + model.numfaces; face++) faceModels.set(face, modelIndex);
+  }
+  for (const index of options.dynamicModels ?? []) {
+    const model = bsp.models[index];
+    if (!model) continue;
+    const object = new THREE.Group();
+    modelGroups.set(index, object); group.add(object);
+    visibleModels.add(index);
+    for (let face = model.firstface; face < model.firstface + model.numfaces; face++) faceModels.set(face, index);
+  }
   const externalTextures: string[] = [];
   const resolvedFromWad: string[] = [];
 
@@ -311,7 +337,9 @@ export function buildBspMeshes(bsp: BspFile, options: BspMeshOptions = {}): BspM
   lightmapTexture.needsUpdate = true;
 
   // ---- geometry, merged per texture
-  const perTexture = new Map<number, {
+  const perTexture = new Map<string, {
+    modelIndex: number;
+    textureIndex: number;
     positions: number[];
     normals: number[];
     uvs: number[];
@@ -324,6 +352,8 @@ export function buildBspMeshes(bsp: BspFile, options: BspMeshOptions = {}): BspM
   let skippedFaces = 0;
 
   for (const [faceIndex, face] of bsp.faces.entries()) {
+    const modelIndex = faceModels.get(faceIndex) ?? 0;
+    if (modelIndex !== 0 && !visibleModels.has(modelIndex)) continue;
     const info = bsp.texinfo[face.texinfo];
     if (!info) continue;
     const plane = bsp.planes[face.planenum];
@@ -391,10 +421,12 @@ export function buildBspMeshes(bsp: BspFile, options: BspMeshOptions = {}): BspM
     const texWidth = texture && texture.width > 0 ? texture.width : 64;
     const texHeight = texture && texture.height > 0 ? texture.height : 64;
 
-    let arrays = perTexture.get(textureIndex);
+    // 功能：门和世界即使用同一贴图，也必须保留各自的模型归属及局部顶点；时间：2026-11-05；作者：lq。
+    const materialKey = `${modelIndex}:${textureIndex}`;
+    let arrays = perTexture.get(materialKey);
     if (!arrays) {
-      arrays = { positions: [], normals: [], uvs: [], lightUvs: [], indices: [] };
-      perTexture.set(textureIndex, arrays);
+      arrays = { modelIndex, textureIndex, positions: [], normals: [], uvs: [], lightUvs: [], indices: [] };
+      perTexture.set(materialKey, arrays);
     }
 
     const rect = rects.get(faceIndex);
@@ -438,7 +470,8 @@ export function buildBspMeshes(bsp: BspFile, options: BspMeshOptions = {}): BspM
     faceCount++;
   }
 
-  for (const [textureIndex, arrays] of perTexture) {
+  for (const arrays of perTexture.values()) {
+    const { textureIndex, modelIndex } = arrays;
     if (arrays.indices.length === 0) continue;
     const name = bsp.miptex[textureIndex]?.name ?? '';
     const isWater = WATER_TEXTURE.test(name);
@@ -460,6 +493,8 @@ export function buildBspMeshes(bsp: BspFile, options: BspMeshOptions = {}): BspM
       transparent: isWater,
       opacity: isWater ? 0.72 : 1,
       depthWrite: !isWater,
+      // 功能：使用 Alpha 裁剪显示原版镂空表面，保留深度写入且避免透明排序错误；时间：2026-11-05；作者：lq。
+      alphaTest: name.startsWith('{') ? 0.5 : 0,
       // 功能：原版 BSP 存在 T 形接缝及局部反向三角形，双面绘制避免地面/墙面露出天空盒。时间：2026-09-29；作者：lq。
       side: THREE.DoubleSide,
     });
@@ -467,11 +502,12 @@ export function buildBspMeshes(bsp: BspFile, options: BspMeshOptions = {}): BspM
     const mesh = new THREE.Mesh(geometry, material);
     mesh.matrixAutoUpdate = false;
     mesh.updateMatrix();
-    group.add(mesh);
+    (modelGroups.get(modelIndex) ?? group).add(mesh);
   }
 
   return {
     group,
+    modelGroups,
     faceCount,
     triangleCount,
     textureCount: bsp.miptex.length,

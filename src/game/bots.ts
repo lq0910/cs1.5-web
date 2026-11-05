@@ -364,8 +364,11 @@ export class BotBrain {
     }
 
     if (goalPosition) {
-      // 功能：长距离执行任务时切刀加速，进入交火分支后下一帧自动切回枪械。时间：2026-11-05；作者：lq。
-      if (!this.target && self.combat.loadout[3].id === 'knife') command.switchTo = 3;
+      // 功能：BOT 巡逻时若当前持刀则切回已有主枪或手枪，避免整队赶路期间只显示刀具；时间：2026-11-05；作者：lq。
+      if (!this.target && self.combat.activeSlot === 3) {
+        command.switchTo = self.combat.loadout[1].id !== 'knife' ? 1
+          : self.combat.loadout[2].id !== 'knife' ? 2 : 3;
+      }
       // 功能：目标切换立即重新规划；保持同一路径直至失败，避免每两秒返回身后的网格点。时间：2026-10-09；作者：lq。
       const goalChanged = !this.navigationGoal || Math.hypot(
         goalPosition.x - this.navigationGoal.x, goalPosition.y - this.navigationGoal.y,

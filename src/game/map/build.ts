@@ -12,6 +12,8 @@ import { v3 } from '../../engine/math.ts';
 import type { CollisionWorld, Hull } from '../../engine/collision/types.ts';
 import type { BoxDef } from '../../engine/collision/brush.ts';
 import { BrushWorld } from '../../engine/collision/brush.ts';
+// 功能：地图通过可选接口提供回合内门体更新与 E 键使用；时间：2026-11-05；作者：lq。
+import type { MapInteractions } from './interactions.ts';
 
 export interface MapSpawn {
   origin: Vec3;
@@ -25,6 +27,8 @@ export interface MapBounds {
 }
 
 export interface MapData {
+  /** 功能：地图实体交互由共享对局驱动，浏览器与无头测试使用相同状态；时间：2026-11-05；作者：lq。 */
+  interactions?: MapInteractions;
   name: string;
   /** World bounds, used to place the navigation grid. */
   bounds: MapBounds;

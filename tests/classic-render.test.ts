@@ -9,6 +9,40 @@ import { compileBsp } from '../src/engine/bsp/write.ts';
 import { parseBsp } from '../src/engine/bsp/reader.ts';
 import { makeTestRoom } from '../src/game/map/build.ts';
 
+/** 功能：覆盖内嵌和外部 WAD 的镂空贴图，确保普通贴图索引 255 不会误透明；时间：2026-11-05；作者：lq。 */
+test('BSP cutout textures use index 255 for transparency and retain solid depth', () => {
+  for (const external of [false, true]) {
+    for (const masked of [false, true]) {
+      const name = masked ? '{fence' : 'brick';
+      const map = makeTestRoom(256, 256);
+      const boxes = map.boxes.map((box) => ({ ...box, material: name }));
+      const bsp = parseBsp(compileBsp({ boxes, spawns: [], externalTextures: external ? [name] : [] }).buffer);
+      const source = bsp.miptex[0]!;
+      const pixels = new Uint8Array(source.width * source.height).fill(255);
+      pixels[0] = 1;
+      const palette = new Uint8Array(768);
+      palette.set([0, 0, 255], 255 * 3);
+      const texture = { ...source, external: false, pixels, palette };
+      if (!external) bsp.miptex[0] = texture;
+      const built = buildBspMeshes(bsp, { wadTextures: new Map([[name, texture]]) });
+      const mesh = built.group.children[0] as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
+      const data = (mesh.material.map as THREE.DataTexture).image.data;
+      assert.ok(data);
+      assert.equal(data[3], 255, 'visible fence pixel remains opaque');
+      assert.equal(data[7], masked ? 0 : 255, 'only cutout textures mask palette index 255');
+      assert.equal(mesh.material.alphaTest, masked ? 0.5 : 0);
+      assert.equal(mesh.material.transparent, false);
+      assert.equal(mesh.material.depthWrite, true);
+      for (const child of built.group.children as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>[]) {
+        child.geometry.dispose();
+        child.material.map?.dispose();
+        child.material.lightMap?.dispose();
+        child.material.dispose();
+      }
+    }
+  }
+});
+
 /** 功能：构建仅含一个两像素帧的合法 IDSP v2，测试不依赖可分发原版素材。时间：2026-11-05；作者：lq。 */
 function spriteBytes(format: number): Uint8Array {
   const bytes = new Uint8Array(42 + 256 * 3 + 20 + 2);
@@ -64,4 +98,18 @@ test('BSP lightmap cancels the basic shader PI attenuation and keeps shadow cont
   assert.equal(goldsrcLightByte(255), 255);
   assert.ok(goldsrcLightByte(32) > 64);
   assert.ok(goldsrcLightByte(96) < goldsrcLightByte(128));
+});
+
+// 功能：验证不可见的实体子模型默认不绘制，显式标记可见后才生成地图网格；时间：2026-11-05；作者：lq。
+test('BSP entity submodels render only when marked visible', () => {
+  const map = makeTestRoom(256, 256);
+  const bsp = parseBsp(compileBsp({ boxes: map.boxes, spawns: [] }).buffer);
+  const worldModel = { ...bsp.models[0]!, numfaces: 0 };
+  const entityModel = { ...bsp.models[0]!, firstface: 0, numfaces: bsp.faces.length };
+  bsp.models = [worldModel, entityModel];
+
+  const hidden = buildBspMeshes(bsp);
+  const visible = buildBspMeshes(bsp, { visibleModels: [1] });
+  assert.equal(hidden.group.children.length, 0, 'non-world entity geometry must remain hidden by default');
+  assert.ok(visible.group.children.length > 0, 'explicitly visible entity geometry should still render');
 });

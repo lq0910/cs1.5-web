@@ -190,6 +190,26 @@ test('crouch-walking is slower than running', () => {
   assert.ok(Math.abs(horizontalSpeed(ducked) - 85) < 3, `crouch speed was ${horizontalSpeed(ducked).toFixed(2)}, want ~85`);
 });
 
+// 功能：覆盖 Ctrl 蹲下后松开即可起身，并确保低矮天花板下仍会阻止站立；时间：2026-11-05；作者：lq。
+test('releasing duck stands up on open ground but stays crouched under a ceiling', () => {
+  const openWorld = world(FLOOR);
+  const open = createMoveState(v3(0, 0, 36));
+  simulate(open, openWorld, 8, cmd({ buttons: IN_DUCK }));
+  assert.equal(open.ducked, true);
+  assert.ok(Math.abs(open.origin.z - 18) < 0.5);
+  simulate(open, openWorld, 1, cmd());
+  assert.equal(open.ducked, false, 'releasing Ctrl should immediately restore the standing hull');
+  assert.equal(open.hull, HULL_STANDING);
+  assert.ok(Math.abs(open.origin.z - 36) < 0.5);
+
+  const lowWorld = world([...FLOOR, box([-256, -256, 40], [256, 256, 80])]);
+  const blocked = createMoveState(v3(0, 0, 36));
+  simulate(blocked, lowWorld, 8, cmd({ buttons: IN_DUCK }));
+  simulate(blocked, lowWorld, 1, cmd());
+  assert.equal(blocked.ducked, true, 'a low ceiling must keep the player crouched');
+  assert.equal(blocked.hull, HULL_DUCKING);
+});
+
 test('the standing hull is 72 tall and the ducking hull 36', () => {
   assert.equal(HULL_STANDING.maxs.z - HULL_STANDING.mins.z, 72);
   assert.equal(HULL_DUCKING.maxs.z - HULL_DUCKING.mins.z, 36);

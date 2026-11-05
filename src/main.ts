@@ -115,6 +115,61 @@ try {
 const loaded = await loadMap(params.get('map'));
 const map = loaded.map;
 
+// 功能：首页地图卡片高亮真实载入图，素材缺失回退时不误报所选地图；时间：2026-11-05；作者：lq。
+function syncHomeMapChoices(): void {
+  const current = loaded.source === 'bsp' ? map.name.replace('BSP: ', '') : 'white_house';
+  document.querySelectorAll<HTMLButtonElement>('[data-map-choice]').forEach((button) => {
+    const active = button.dataset.mapChoice === current;
+    button.setAttribute('aria-pressed', String(active));
+    button.classList.toggle('border-yellow-400/60', active);
+    button.classList.toggle('bg-yellow-500/10', active);
+    const label = button.querySelector('strong');
+    label?.classList.toggle('text-yellow-200', active);
+    label?.classList.toggle('text-gray-200', !active);
+  });
+}
+syncHomeMapChoices();
+
+/** 功能：创建房间时回显实际地图并启用切换，沿用 URL 中的阵营和对局设置；时间：2026-11-05；作者：lq。 */
+function syncMapMenu(): void {
+  const label = document.getElementById('current-map-name');
+  const select = document.getElementById('room-map') as HTMLSelectElement | null;
+  const button = document.getElementById('start-selected-map') as HTMLButtonElement | null;
+  // 功能：地图面板显示雪地图规范名称，默认选中实际已载入的沙漠2；时间：2026-11-05；作者：lq。
+  if (label) label.textContent = map.name === 'BSP: cs_assault' ? '白房子 / 72街仓库 · cs_assault'
+    : map.name === 'BSP: fy_iceworld' ? '雪地 · fy_iceworld' : map.name;
+  if (select) {
+    const current = loaded.source === 'bsp' ? map.name.replace('BSP: ', '') : 'white_house';
+    if (Array.from(select.options).some((option) => option.value === current)) select.value = current;
+  }
+  if (button) button.disabled = false;
+}
+window.addEventListener('cs15-open-map-menu', syncMapMenu);
+syncMapMenu();
+
+// 功能：通过菜单载入所选地图，清理旧地图的调试坐标与飞行状态，避免跨地图出生在墙里；时间：2026-11-05；作者：lq。
+document.addEventListener('click', (event) => {
+  if (!(event.target instanceof Element) || !event.target.closest('#start-selected-map')) return;
+  const select = document.getElementById('room-map') as HTMLSelectElement | null;
+  if (!select || !['cs_assault', 'de_dust2', 'fy_iceworld', 'white_house'].includes(select.value)) return;
+  const url = new URL(window.location.href);
+  url.searchParams.set('map', select.value);
+  for (const key of ['pos', 'yaw', 'pitch', 'fly', 'probe', 'nolock']) url.searchParams.delete(key);
+  window.location.assign(url.href);
+});
+
+// 功能：首页右侧地图按钮直达 Dust2、Assault、Iceworld，并移除调试出生点参数；时间：2026-11-05；作者：lq。
+document.addEventListener('click', (event) => {
+  if (!(event.target instanceof Element)) return;
+  const button = event.target.closest<HTMLButtonElement>('[data-map-choice]');
+  const name = button?.dataset.mapChoice;
+  if (!name || !['de_dust2', 'cs_assault', 'fy_iceworld'].includes(name)) return;
+  const url = new URL(window.location.href);
+  url.searchParams.set('map', name);
+  for (const key of ['pos', 'yaw', 'pitch', 'fly', 'probe', 'nolock']) url.searchParams.delete(key);
+  window.location.assign(url.href);
+});
+
 if (loaded.object) renderer.addObject(loaded.object);
 if (map.boxes.length > 0) renderer.addBoxes(map.boxes);
 renderer.setFog(map.fogColor, 1800, 9000);
@@ -580,6 +635,8 @@ document.querySelectorAll<HTMLElement>('[data-menu]').forEach((button) => {
   if (button === startButton) return;
   button.addEventListener('click', () => {
     const action = button.dataset.menu ?? '';
+    // 功能：创建房间已有地图选择弹窗，不再叠加原来的房间就绪提示；时间：2026-11-05；作者：lq。
+    if (action === 'create') return;
     if (action === 'play') {
       startButton.click();
       return;

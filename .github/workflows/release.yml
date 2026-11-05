@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: '手动发布时使用的版本标签，例如 v0.1.1；留空则按 package.json 版本自动生成'
+        description: '手动发布时使用的版本标签，例如 v0.1.2；留空则按 package.json 版本自动生成'
         required: false
         type: string
 

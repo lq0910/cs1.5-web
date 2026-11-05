@@ -64,6 +64,8 @@ export function makeUserCmd(): UserCmd {
 }
 
 export interface MoveState {
+  /** 功能：跳离梯子后短时间禁止重新吸附，保证 Space 可以真正脱离梯面；时间：2026-11-05；作者：lq。 */
+  ladderDetachTime: number;
   origin: Vec3;
   velocity: Vec3;
   angles: { pitch: number; yaw: number; roll: number };
@@ -93,6 +95,7 @@ export interface MoveState {
 export function createMoveState(origin: Vec3, yaw = 0): MoveState {
   return {
     origin: copy(origin),
+    ladderDetachTime: 0,
     velocity: v3(),
     angles: { pitch: 0, yaw, roll: 0 },
     hull: HULL_STANDING,
@@ -400,8 +403,9 @@ function pmDuck(state: MoveState, world: CollisionWorld, cmd: UserCmd, dt: numbe
   if (!wantsDuck) {
     state.duckTimeMs = 0;
     if (state.ducked) {
+      // 功能：站立空间检测从抬高后的站立位置开始，避免蹲姿高度的站立 hull 起点陷入地板而无法起身；时间：2026-11-05；作者：lq。
       const standTo = v3(state.origin.x, state.origin.y, state.origin.z + 18);
-      const trace = world.traceHull(HULL_STANDING, state.origin, standTo);
+      const trace = world.traceHull(HULL_STANDING, standTo, standTo);
       if (trace.fraction === 1) {
         state.hull = HULL_STANDING;
         state.origin = standTo;
@@ -446,6 +450,36 @@ function pmAirMove(state: MoveState, world: CollisionWorld, cmd: UserCmd, dt: nu
  * PM_PlayerMove — the per-tick entry point. Order matters and mirrors the SDK:
  * duck -> clamp -> ground check -> friction -> jump -> move -> ground check.
  */
+/** 功能：将朝向梯面的输入转为上下攀爬，横向输入沿梯面移动，Space 蹬离；时间：2026-11-05；作者：lq。 */
+function pmLadderMove(state: MoveState, world: CollisionWorld, cmd: UserCmd, dt: number): boolean {
+  state.ladderDetachTime = Math.max(0, state.ladderDetachTime - dt);
+  if (state.ladderDetachTime > 0) return false;
+  const ladder = world.ladderAt?.(state.hull, state.origin);
+  if (!ladder || state.origin.z + state.hull.mins.z >= ladder.maxs.z - 1) return false;
+  if (cmd.buttons & IN_JUMP) {
+    state.velocity = v3(ladder.normal.x * 270, ladder.normal.y * 270, 160);
+    state.ladderDetachTime = 0.25;
+    state.onground = false;
+    state.jumpHeld = true;
+    return false;
+  }
+  const forward = v3(), right = v3(), up = v3();
+  angleVectors(cmd.pitch, cmd.yaw, 0, forward, right, up);
+  const fmove = clamp(cmd.forwardmove, -400, 400), smove = clamp(cmd.sidemove, -400, 400);
+  const wish = v3(forward.x * fmove + right.x * smove, forward.y * fmove + right.y * smove, forward.z * fmove);
+  const into = -dot(wish, ladder.normal);
+  wish.x += ladder.normal.x * into; wish.y += ladder.normal.y * into; wish.z += into;
+  const speed = normalize(wish);
+  const cap = state.ducked ? 66 : Math.min(200, state.maxspeed);
+  state.velocity = scale(wish, Math.min(speed, cap));
+  state.onground = false; state.flags &= ~FL_ONGROUND;
+  state.jumpHeld = false;
+  pmSlideMove(state, world, dt);
+  pmCheckVelocity(state);
+  return true;
+}
+
+/** 功能：梯子处理插入在蹲姿和落地检测之后，其余地图仍走原版地面/空中移动；时间：2026-11-05；作者：lq。 */
 export function pmPlayerMove(
   state: MoveState,
   world: CollisionWorld,
@@ -457,6 +491,8 @@ export function pmPlayerMove(
   pmDuck(state, world, cmd, dt);
   pmCheckVelocity(state);
   pmCategorizePosition(state, world);
+
+  if (pmLadderMove(state, world, cmd, dt)) return;
 
   if (state.onground) {
     pmFriction(state, dt);
