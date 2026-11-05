@@ -32,6 +32,9 @@ function readChannel(bytes: Uint8Array, offset: number, frame: number): number {
 export function samplePose(mdl: Mdl, sequence: MdlSequence | null, frame = 0, pitch = 0): BonePose[] {
   const bytes = mdl.bytes;
   const sampledFrame = sequence ? Math.max(0, Math.min(sequence.numFrames - 1, Math.floor(frame))) : 0;
+  // 功能：按 Studio 的连续帧插值平滑低帧率原版动画，不再逐帧阶跃。时间：2026-11-05；作者：lq。
+  const nextFrame = sequence ? Math.min(sequence.numFrames - 1, sampledFrame + 1) : 0;
+  const frameFraction = Math.max(0, Math.min(1, frame - sampledFrame));
   // 功能：9 档瞄准动作按 -90° 至 +90° 插值；中间第 5 档才是水平视角。时间：2026-09-29；作者：lq。
   const blend = sequence && sequence.numBlends === 9 && sequence.blendEnd !== sequence.blendStart
     ? Math.max(0, Math.min(sequence.numBlends - 1, (pitch - sequence.blendStart) / (sequence.blendEnd - sequence.blendStart) * (sequence.numBlends - 1)))
@@ -43,6 +46,7 @@ export function samplePose(mdl: Mdl, sequence: MdlSequence | null, frame = 0, pi
   for (const [index, bone] of mdl.bones.entries()) {
     const translation = [...bone.value];
     const angles = [...bone.rotation];
+    const nextAngles = [...bone.rotation];
     if (sequence && sequence.seqGroup === 0) {
       const animAt = sequence.animIndex + (lowerBlend * mdl.bones.length + index) * 12;
       const upperAnimAt = sequence.animIndex + (upperBlend * mdl.bones.length + index) * 12;
@@ -56,16 +60,22 @@ export function samplePose(mdl: Mdl, sequence: MdlSequence | null, frame = 0, pi
           if (!relative && !upperRelative) continue;
           const lowerValue = relative ? readChannel(bytes, animAt + relative, sampledFrame) : 0;
           const upperValue = upperRelative ? readChannel(bytes, upperAnimAt + upperRelative, sampledFrame) : 0;
+          const lowerNext = relative ? readChannel(bytes, animAt + relative, nextFrame) : 0;
+          const upperNext = upperRelative ? readChannel(bytes, upperAnimAt + upperRelative, nextFrame) : 0;
           const value = (lowerValue + (upperValue - lowerValue) * fraction) * bone.scale[channel]!;
-          if (channel < 3) translation[channel] = bone.value[channel]! + value;
-          else angles[channel - 3] = bone.rotation[channel - 3]! + value;
+          const nextValue = (lowerNext + (upperNext - lowerNext) * fraction) * bone.scale[channel]!;
+          if (channel < 3) translation[channel] = bone.value[channel]! + value + (nextValue - value) * frameFraction;
+          else {
+            angles[channel - 3] = bone.rotation[channel - 3]! + value;
+            nextAngles[channel - 3] = bone.rotation[channel - 3]! + nextValue;
+          }
         }
       }
     }
     const localPosition = new THREE.Vector3(translation[0], translation[1], translation[2]);
     const localRotation = new THREE.Quaternion().setFromEuler(
       new THREE.Euler(angles[0], angles[1], angles[2], 'ZYX'),
-    );
+    ).slerp(new THREE.Quaternion().setFromEuler(new THREE.Euler(nextAngles[0], nextAngles[1], nextAngles[2], 'ZYX')), frameFraction);
     const parent = bone.parent >= 0 && bone.parent < index ? poses[bone.parent] : null;
     if (!parent) {
       poses.push({ position: localPosition, rotation: localRotation });

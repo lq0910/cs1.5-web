@@ -45,7 +45,7 @@ import { clampTeamSizes, DEFAULT_TEAM_SIZE, MAX_TEAM_SIZE, mapTeamSizeLimit } fr
 import { placeCritters, traceCritters, updateCritters } from './critters.ts';
 import type { Critter } from './critters.ts';
 // 功能：对局模拟使用原版手雷投掷与物理参数。时间：2026-09-30；作者：lq。
-import { grenadeLaunch, heDamage, GRENADE_GRAVITY, GRENADE_FRICTION, GRENADE_FUSE } from './grenades.ts';
+import { grenadeLaunch, heDamage, GRENADE_GRAVITY, GRENADE_FRICTION, GRENADE_FUSE, GRENADE_PULLPIN_TIME, GRENADE_THROW_TIME } from './grenades.ts';
 import type { WeaponId } from './weapons.ts';
 import { IN_ATTACK, IN_ATTACK2, IN_FORWARD, IN_MOVELEFT, IN_MOVERIGHT, IN_USE, TICK_INTERVAL } from './constants.ts';
 
@@ -721,6 +721,11 @@ export class Match {
               actor.move.origin.z - this.mode.bomb.position.z,
             ) < 64,
         });
+        // 功能：应用 BOT 的跑刀/接敌换枪决定，并让换枪动画完整占用一个 tick。时间：2026-11-05；作者：lq。
+        if (brainCommand.switchTo !== null && brainCommand.switchTo !== actor.combat.activeSlot) {
+          actor.combat.selectSlot(brainCommand.switchTo, now);
+          brainCommand.buttons &= ~IN_ATTACK;
+        }
         actor.yaw = brainCommand.yaw;
         actor.pitch = brainCommand.pitch;
         command = {
@@ -744,12 +749,14 @@ export class Match {
         else this.mode.cancelDefuse(actor);
       }
 
-      // ---- 2. freeze time: in CS nothing moves or fires until "go"
-      if (this.mode.phase === 'freeze' || this.mode.phase === 'warmup' || this.mode.phase === 'over') {
+      // 功能：仅显式配置的准备/冻结阶段锁定移动，回合结算等待下一局时存活玩家仍可走动和跳跃。时间：2026-11-05；作者：lq。
+      if (this.mode.phase === 'freeze' || this.mode.phase === 'warmup') {
         command.buttons = 0;
         command.forwardmove = 0;
         command.sidemove = 0;
       }
+      // 功能：结算阶段保留移动、换弹输入，沿用既有禁止攻击规则，避免胜负已定后继续产生击杀奖励。时间：2026-11-05；作者：lq。
+      if (this.mode.phase === 'over') command = { ...command, buttons: command.buttons & ~(IN_ATTACK | IN_ATTACK2) };
 
       // ---- 3. movement (identical code path for bots and the player)
       const cmd = {
@@ -795,7 +802,8 @@ export class Match {
         if (actor.grenades[kind] > 0 && !actor.grenadeAction) {
           // 功能：先播放拔销动作，再在动作结束时生成飞行手雷。时间：2026-09-29；作者：lq。
           actor.grenadeAction = 'pullpin';
-          actor.grenadeActionEndTime = now + 0.55;
+          // 功能：等待原版拔销末帧，不再使用 0.55 秒截短动作。时间：2026-11-05；作者：lq。
+          actor.grenadeActionEndTime = now + GRENADE_PULLPIN_TIME;
         }
         actor.grenadeAttackHeld = true;
       }
@@ -819,7 +827,8 @@ export class Match {
         // 功能：本地无限手雷不消耗，普通角色仍按库存逐枚扣除。时间：2026-09-30；作者：lq。
         if (Number.isFinite(actor.grenades[kind])) actor.grenades[kind]--;
         actor.grenadeAction = 'throw';
-        actor.grenadeActionEndTime = now + 0.35;
+        // 功能：完整播放 throw，再自动切回持枪。时间：2026-11-05；作者：lq。
+        actor.grenadeActionEndTime = now + GRENADE_THROW_TIME;
       } else if (actor.grenadeAction === 'throw' && now >= actor.grenadeActionEndTime) {
         actor.grenadeAction = null;
         actor.grenadeActionEndTime = 0;

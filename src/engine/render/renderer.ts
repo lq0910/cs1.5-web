@@ -157,7 +157,9 @@ export class WorldRenderer {
     this.camera.fov = verticalFovForHorizontal(this.fovHorizontal, aspect);
     this.camera.updateProjectionMatrix();
     if (this.viewCamera) {
+      // 功能：第一人称沿用 GoldSrc 水平 90° 投影，宽屏不再用固定竖直 54° 裁切双臂。时间：2026-11-05；作者：lq。
       this.viewCamera.aspect = aspect;
+      this.viewCamera.fov = verticalFovForHorizontal(90, aspect);
       this.viewCamera.updateProjectionMatrix();
     }
   }
@@ -186,7 +188,9 @@ export class WorldRenderer {
   setViewScene(scene: THREE.Scene, camera: THREE.PerspectiveCamera): void {
     this.viewScene = scene;
     this.viewCamera = camera;
+    // 功能：首次挂接武器层时同步原版水平视野。时间：2026-11-05；作者：lq。
     camera.aspect = this.camera.aspect;
+    camera.fov = verticalFovForHorizontal(90, camera.aspect);
     camera.updateProjectionMatrix();
   }
 

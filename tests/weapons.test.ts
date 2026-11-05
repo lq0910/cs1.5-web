@@ -20,6 +20,8 @@ import {
   decayPunch,
   reloadDuration,
   spreadOffset,
+  // 功能：校验每类武器的镜头视野与开镜循环。时间：2026-11-05；作者：lq。
+  weaponZoomFov,
 } from '../src/game/weapons.ts';
 import {
   CombatSystem,
@@ -131,9 +133,11 @@ test('the AK spray climbs first, then wanders sideways', () => {
   let punch = { pitch: 0, yaw: 0 };
   const pitches: number[] = [];
   const yaws: number[] = [];
+  // 功能：可控随机源验证原版概率换向，避免固定喷射路线及随机抖动测试。时间：2026-11-05；作者：lq。
+  const direction = { right: true };
 
   for (let shot = 0; shot < 18; shot++) {
-    punch = applyRecoil(punch, ak, shot);
+    punch = applyRecoil(punch, ak, shot, EYE, () => shot === 5 ? 0 : 0.9, direction);
     pitches.push(punch.pitch);
     yaws.push(punch.yaw);
   }
@@ -310,7 +314,8 @@ test('empty magazine automatically reloads from reserve', () => {
   assert.equal(combat.current().ammo, 0);
   assert.equal(automatic, 'glock18');
   assert.ok(combat.current().reloadEndTime > now);
-  assert.ok(reloadDuration('glock18') < WEAPONS.glock18.reloadTime);
+  // 功能：取消旧版 0.82 倍人为加速。时间：2026-11-05；作者：lq。
+  assert.equal(reloadDuration('glock18'), WEAPONS.glock18.reloadTime);
   assert.equal(combat.tick(shooter(), ROOM, IN_ATTACK, now, TICK_INTERVAL).shots.length, 0);
 
   const reserveBefore = combat.current().reserve;
@@ -429,4 +434,48 @@ test('runtime starts loaded with the right magazine size', () => {
   const knife = makeWeaponRuntime('knife');
   assert.equal(knife.reserve, 0);
   assert.equal(knife.reloadEndTime, 0);
+});
+
+// 功能：按源码参数验证移动/空中/蹲伏后坐差异，以及幅度相关回正。时间：2026-11-05；作者：lq。
+test('KickBack uses movement branches and GoldSrc punch recovery', () => {
+  const zero = { pitch: 0, yaw: 0 };
+  const recoil = (motion: Partial<ShooterState>) => applyRecoil(zero, WEAPONS.ak47, 0, shooter(motion), () => 0.9, { right: true });
+  assert.equal(recoil({}).pitch, -1);
+  assert.equal(recoil({ ducked: true }).pitch, -0.9);
+  assert.equal(recoil({ speed: 150 }).pitch, -1.5);
+  assert.equal(recoil({ onGround: false }).pitch, -2);
+  assert.equal(recoil({ speed: 150, onGround: false }).pitch, -1.5);
+  assert.equal(decayPunch({ pitch: -10, yaw: 0 }, WEAPONS.ak47, 0.1).pitch, -8.5);
+});
+
+// 功能：实际右键输入依次通过各枪放大档位，连按不跳档，AUG/SG552 不再出现狙击双档。时间：2026-11-05；作者：lq。
+test('each scoped weapon cycles through its own FOV levels', () => {
+  for (const [id, expected] of [
+    ['awp', [40, 10, 90]], ['scout', [40, 15, 90]],
+    ['g3sg1', [40, 15, 90]], ['sg550', [40, 15, 90]],
+    ['aug', [55, 90]], ['sg552', [55, 90]],
+  ] as const) {
+    const combat = new CombatSystem({ 1: id, 2: 'usp45', 3: 'knife' }, 53);
+    let now = 1;
+    for (const fov of expected) {
+      combat.tick(shooter(), ROOM, IN_ATTACK2, now, TICK_INTERVAL);
+      assert.equal(weaponZoomFov(id, combat.current().zoomLevel), fov, id);
+      assert.equal(combat.current().scoped, fov !== 90);
+      combat.tick(shooter(), ROOM, IN_ATTACK2, now + TICK_INTERVAL, TICK_INTERVAL);
+      assert.equal(weaponZoomFov(id, combat.current().zoomLevel), fov, 'holding right click must not skip a zoom level');
+      combat.tick(shooter(), ROOM, 0, now + TICK_INTERVAL * 2, TICK_INTERVAL);
+      now += 0.5;
+    }
+  }
+});
+
+// 功能：射击不会把连狙和带镜步枪强制退出开镜，手动拉栓狙击仍会退镜。时间：2026-11-05；作者：lq。
+test('firing retains automatic scope and exits bolt-action scope', () => {
+  for (const id of ['aug', 'sg552', 'g3sg1', 'sg550', 'awp', 'scout'] as const) {
+    const combat = new CombatSystem({ 1: id, 2: 'usp45', 3: 'knife' }, 54);
+    combat.tick(shooter(), ROOM, IN_ATTACK2, 1, TICK_INTERVAL);
+    const events = combat.tick(shooter(), ROOM, IN_ATTACK, 1.5, TICK_INTERVAL);
+    assert.equal(events.shots.length, 1);
+    assert.equal(combat.current().scoped, id !== 'awp' && id !== 'scout', id);
+  }
 });

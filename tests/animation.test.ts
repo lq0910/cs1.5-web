@@ -7,12 +7,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import * as THREE from 'three';
 import { parseMdl, findSequence } from '../src/engine/mdl/parser.ts';
-import { buildStudio, setStudioPose, studioHandPosition, studioHandLocalPosition, studioMuzzleLocalPosition, studioViewMuzzlePosition } from '../src/engine/render/studio.ts';
+import { buildStudio, setStudioPose, studioHandPosition, studioHandLocalPosition, studioMuzzleLocalPosition, studioViewMuzzlePosition, studioSequence } from '../src/engine/render/studio.ts';
 import { samplePose } from '../src/engine/mdl/animation.ts';
 import { ActorRenderer, placeWeaponAtHand } from '../src/engine/render/actors.ts';
 import { createActor } from '../src/game/actors.ts';
 import { v3 } from '../src/engine/math.ts';
-import { ViewModel, type ViewModelState } from '../src/engine/render/viewmodel.ts';
+import { ViewModel, classicBob, type ViewModelState } from '../src/engine/render/viewmodel.ts';
 import type { WeaponId } from '../src/game/weapons.ts';
 
 /** 功能：读取本地 CS 模型并计算 WebGL 网格边界。时间：2026-09-29；作者：lq。 */
@@ -170,7 +170,9 @@ test('第一人称 AK 枪口锚点取自模型网格', () => {
   const muzzle = studioViewMuzzlePosition(model)!;
   const bounds = new THREE.Box3().setFromObject(model);
   assert.ok(muzzle.z <= bounds.min.z + 0.001);
-  assert.ok(muzzle.z > -0.4);
+  // 功能：枪口保留原版眼睛坐标，禁止以居中后的假边界约束它。时间：2026-11-05；作者：lq。
+  assert.ok(model.position.equals(new THREE.Vector3()));
+  assert.ok(muzzle.z < 0);
 });
 
 // 功能：确认烟雾弹使用本地 CS 原版 v_ 模型，而不是临时刀状几何占位。时间：2026-09-30；作者：lq。
@@ -185,15 +187,15 @@ test('烟雾弹原版模型包含手部与罐体贴图', () => {
  * browser canvas for the muzzle texture or asynchronous asset loading. */
 function viewModelFixture(id: WeaponId, modelName: string) {
   const studio = buildStudio(parseMdl(new Uint8Array(readFileSync(`public/cstrike/models/v_${modelName}.mdl`))));
-  studio.scale.multiplyScalar(1.2);
+  // 功能：测试与运行时都保留原版比例，不再额外放大模型。时间：2026-11-05；作者：lq。
   const weapon = new THREE.Group();
   weapon.add(studio);
   const viewModel = Object.assign(Object.create(ViewModel.prototype), {
     weaponId: id, weapon, studio,
     muzzleFlash: new THREE.Sprite(new THREE.SpriteMaterial()),
-    bobPhase: 0, swayPitch: 0, swayYaw: 0, lastPitch: 0, lastYaw: 0,
-    recoil: 0, lowered: 0, actionSequence: '', shootTimer: 0,
-    knifeActionTime: 0, flashTimer: 0,
+    // 功能：初始化真实动作时钟和枪口，覆盖与运行时一致的动画路径。时间：2026-11-05；作者：lq。
+    bobPhase: 0, bob: 0, bobSpeed: 0, actionSequence: '', actionElapsed: 0, actionKind: '',
+    idleElapsed: 0, shotNumber: 0, flashTimer: 0, muzzle: new THREE.Object3D(),
   }) as ViewModel;
   const state: ViewModelState = {
     speed: 0, onGround: true, ducked: false, scoped: false,
@@ -225,15 +227,86 @@ for (const [id, modelName] of [
   });
 }
 
-test('crouched movement retains reduced bob rather than a permanent vertical offset', () => {
-  const standing = viewModelFixture('ak47', 'ak47');
-  const crouched = viewModelFixture('ak47', 'ak47');
-  const moving = { ...standing.state, speed: 150 };
-  standing.viewModel.update(1 / 60, moving);
-  crouched.viewModel.update(1 / 60, { ...moving, ducked: true });
-  const standingBob = Math.abs(standing.weapon.position.y + 0.2);
-  const crouchedBob = Math.abs(crouched.weapon.position.y + 0.2);
-  assert.ok(standingBob > 0 && crouchedBob > 0);
-  assert.ok(crouchedBob < standingBob, 'crouch should reduce bob amplitude');
-  assert.ok(Math.abs(crouchedBob / standingBob - 0.012 / 0.026) < 1e-9);
+// 功能：原版 cl_bob 只取水平速度，不再额外按蹲伏叠加一套振幅。时间：2026-11-05；作者：lq。
+test('classic bob follows SDK timing and freezes in the air', () => {
+  assert.ok(Math.abs(classicBob(0.2, 250) - 2.5) < 1e-9);
+  assert.ok(Math.abs(classicBob(0.6, 250) + 1) < 1e-9);
+  const fixture = viewModelFixture('ak47', 'ak47');
+  fixture.viewModel.update(0.2, { ...fixture.state, speed: 250 });
+  const position = fixture.weapon.position.clone();
+  fixture.viewModel.update(0.2, { ...fixture.state, speed: 250, onGround: false });
+  assert.ok(fixture.weapon.position.equals(position));
+});
+
+// 功能：真实 AK 视图跑满一个步频后检查摆幅、起停与帧率独立性，防止大幅晃枪回归。时间：2026-11-05；作者：lq。
+test('walking weapon motion stays restrained and settles smoothly at every frame rate', () => {
+  const results: number[][] = [];
+  for (const fps of [30, 60, 144]) {
+    const { viewModel, weapon, state } = viewModelFixture('ak47', 'ak47');
+    let minimumRoll = Infinity;
+    let maximumRoll = -Infinity;
+    for (let frame = 0; frame < fps * 2; frame++) {
+      viewModel.update(1 / fps, { ...state, speed: 250 });
+      const roll = THREE.MathUtils.radToDeg(weapon.rotation.z);
+      minimumRoll = Math.min(minimumRoll, roll);
+      maximumRoll = Math.max(maximumRoll, roll);
+    }
+    assert.ok(maximumRoll - minimumRoll < 1.3, 'running roll should stay below 1.3 degrees peak to peak');
+    const beforeStop = viewModel.cameraBob;
+    viewModel.update(0, { ...state, speed: 0 });
+    assert.equal(viewModel.cameraBob, beforeStop, 'a paused frame must not snap to the new speed');
+    viewModel.update(1 / fps, { ...state, speed: 0 });
+    assert.ok(Math.abs(viewModel.cameraBob) > 0.01, 'stopping should ease out rather than snap to zero');
+    for (let frame = 1; frame < fps; frame++) viewModel.update(1 / fps, state);
+    assert.equal(Math.abs(viewModel.cameraBob), 0, 'stopped motion must settle completely');
+    assert.equal(Math.abs(weapon.rotation.z), 0);
+    results.push([minimumRoll, maximumRoll]);
+  }
+  for (const result of results.slice(1)) for (let index = 0; index < 2; index++) {
+    assert.ok(Math.abs(result[index]! - results[0]![index]!) < 0.02, 'frame rate must not change the walking amplitude');
+  }
+});
+
+// 功能：确认原版动作按真实 fps 连续采样，M3 击发不会在 0.12 秒后丢失泵动。时间：2026-11-05；作者：lq。
+test('M3 fire keeps its original pump animation and repeated shots restart it', () => {
+  const fixture = viewModelFixture('m3', 'm3');
+  fixture.viewModel.kick();
+  fixture.viewModel.update(0.5, fixture.state);
+  fixture.viewModel.update(0, fixture.state);
+  const expected = buildStudio(parseMdl(new Uint8Array(readFileSync('public/cstrike/models/v_m3.mdl'))));
+  setStudioPose(expected, 'shoot1', 16);
+  const positions = (group: THREE.Group) => ((group.children[0] as THREE.Mesh).geometry.getAttribute('position') as THREE.BufferAttribute).array;
+  assert.deepEqual(positions(fixture.studio), positions(expected));
+  fixture.viewModel.kick();
+  fixture.viewModel.update(0, fixture.state);
+  setStudioPose(expected, 'shoot2', 0);
+  assert.deepEqual(positions(fixture.studio), positions(expected));
+});
+
+// 功能：切枪使用 draw 元数据，半帧插值不会停留在前一整帧。时间：2026-11-05；作者：lq。
+test('draw sequence retains authored origin and supports fractional animation frames', () => {
+  const mdl = parseMdl(new Uint8Array(readFileSync('public/cstrike/models/v_ak47.mdl')));
+  const model = buildStudio(mdl);
+  assert.deepEqual(model.position.toArray(), [0, 0, 0]);
+  assert.deepEqual(studioSequence(model, ['draw']), { ...mdl.sequences.find(s => s.label === 'draw')! });
+  const sequence = findSequence(mdl, 'draw')!;
+  const first = samplePose(mdl, sequence, 5);
+  const middle = samplePose(mdl, sequence, 5.5);
+  const next = samplePose(mdl, sequence, 6);
+  assert.ok(middle.some((pose, index) => pose.position.distanceTo(first[index]!.position) > 0.001));
+  assert.ok(middle.some((pose, index) => pose.position.distanceTo(next[index]!.position) > 0.001));
+});
+
+// 功能：真实 draw 中间帧应落到网格，而不是只改变枪械父节点。时间：2026-11-05；作者：lq。
+test('weapon deploy renders authored draw poses and punch cancels camera rotation', () => {
+  const fixture = viewModelFixture('ak47', 'ak47');
+  Object.assign(fixture.viewModel, { actionKind: 'draw', actionElapsed: 0.5 });
+  fixture.viewModel.update(0, fixture.state);
+  const expected = buildStudio(parseMdl(new Uint8Array(readFileSync('public/cstrike/models/v_ak47.mdl'))));
+  setStudioPose(expected, 'draw', 15);
+  const positions = (group: THREE.Group) => ((group.children[0] as THREE.Mesh).geometry.getAttribute('position') as THREE.BufferAttribute).array;
+  assert.deepEqual(positions(fixture.studio), positions(expected));
+  fixture.viewModel.update(0, { ...fixture.state, punch: { pitch: -3, yaw: 2 } });
+  assert.ok(Math.abs(fixture.weapon.rotation.x + Math.PI / 60) < 1e-9);
+  assert.ok(Math.abs(fixture.weapon.rotation.y + Math.PI / 90) < 1e-9);
 });

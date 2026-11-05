@@ -168,3 +168,25 @@ test('bots resume a released player defuse and replace a dead defuser within the
   assert.ok(replaced, 'a bot should take over when the player releases use');
   assert.ok(defused, 'another bot should finish after the first defuser dies');
 });
+
+// 功能：验证 BOT 长距离执行任务会跑刀、看见敌人会切回主武器，避免持枪慢跑或持刀贴脸。时间：2026-11-05；作者：lq。
+test('bot changes equipment with travel and combat context', () => {
+  const start = graph.nodes[nearestNode(graph, spawns[0]!.origin)]!;
+  const actor = createActor({ name: 'runner', team: 't', isBot: true,
+    spawn: { x: start.x, y: start.y, z: start.z }, yaw: 0,
+    weapons: { 1: 'ak47', 2: 'glock18', 3: 'knife' }, seed: 41 });
+  actor.combat.selectSlot(3, 0);
+  const brain = new BotBrain(41, actor.move.origin);
+  const goal = { position: { x: start.x + 220, y: start.y, z: start.z }, kind: 'patrol' as const };
+  const travel = brain.think(TICK_INTERVAL, { world, graph, self: actor, enemies: [], goal,
+    now: 1, skill: 0, canPlant: false, canDefuse: false });
+  assert.equal(travel.switchTo, 3, 'a travelling bot should keep the knife out');
+
+  const enemy = createActor({ name: 'target', team: 'ct', isBot: true,
+    spawn: { x: start.x + 96, y: start.y, z: start.z }, yaw: 180,
+    weapons: { 1: 'm4a1', 2: 'usp45', 3: 'knife' }, seed: 42 });
+  const engage = brain.think(TICK_INTERVAL, { world, graph, self: actor, enemies: [enemy], goal,
+    now: 1.5, skill: 0, canPlant: false, canDefuse: false });
+  assert.equal(engage.switchTo, 1, 'an engaged bot should draw its primary weapon');
+  assert.ok(engage.pitch > 0, 'aim should settle on the enemy chest instead of the floor');
+});

@@ -27,3 +27,7 @@ export function grenadeLaunch(eye: Vec3, pitch: number, yaw: number, playerVeloc
     ),
   };
 }
+
+/** 功能：本地 CS 1.5 v_ 雷模型 pullpin=41 帧/41fps、throw=17 帧/30fps，以末帧区间计时。时间：2026-11-05；作者：lq。 */
+export const GRENADE_PULLPIN_TIME = 40 / 41;
+export const GRENADE_THROW_TIME = 16 / 30;

@@ -93,6 +93,15 @@ class AtlasPacker {
   }
 }
 
+/** 功能：参照 GoldSrc 兼容引擎 BuildGammaTable 的 brightness 暗部拐点，保留黑场和满亮端点。时间：2026-11-05；作者：lq。 */
+export function goldsrcLightByte(value: number, overbright = 2): number {
+  const input = Math.min(1, Math.max(0, value * overbright / 255));
+  const lit = Math.pow(input, 2.5);
+  const knee = 0.05; // brightness=1：0.125 - brightness² × 0.075。
+  const mapped = lit <= knee ? lit / knee * 0.125 : (lit - knee) / (1 - knee) * 0.875 + 0.125;
+  return Math.round(255 * Math.pow(mapped, 1 / 2.2));
+}
+
 /** Per-face lightmap block size, as computed by the map compiler. */
 function lightmapSize(
   bsp: BspFile,
@@ -182,7 +191,7 @@ function dataTextureFromPalette(
 }
 
 export interface BspMeshOptions {
-  /** Lightmap gamma (GoldSrc's `lightgamma` cvar, default 2.5). 1 = raw luxels. */
+  /** 功能：可选手动 gamma 校准，省略时使用默认亮度表；不等同于引擎 lightgamma。时间：2026-11-05；作者：lq。 */
   lightGamma?: number;
   /** Lightmap multiplier before the gamma table (the Quake lineage uses 2). */
   lightOverbright?: number;
@@ -256,18 +265,14 @@ export function buildBspMeshes(bsp: BspFile, options: BspMeshOptions = {}): BspM
   const luxelCount = [...faceSizes.values()].reduce((sum, size) => sum + size.width * size.height, 0);
   const bytesPerLuxel = bsp.lighting.length >= luxelCount * 2.5 ? 3 : 1;
 
-  // GoldSrc runs the baked luxels through a gamma table (the `lightgamma` cvar,
-  // default 2.5) and multiplies by two. Both are exposed so the look can be
-  // dialled in from the URL (`?lm=` / `?lmi=`) while comparing against the
-  // original game.
+  // 功能：真实 RGB BSP 默认使用带 brightness 拐点的光照表，修复室内偏暗；URL lm 保留手动校准。时间：2026-11-05；作者：lq。
   const lightGamma = Math.max(1, options.lightGamma ?? 1);
   const overbright = Math.max(0, options.lightOverbright ?? (bytesPerLuxel === 3 ? 2 : 1));
-  // GoldSrc brightens first (overbright), then maps through the gamma table — the
-  // other order blows out the highlights instead of lifting the shadows.
   const shade = (value: number): number => {
+    if (bytesPerLuxel === 3 && options.lightGamma === undefined) return goldsrcLightByte(value, overbright);
     const scaled = Math.min(255, value * overbright);
-    if (lightGamma === 1) return Math.round(scaled);
-    return Math.max(0, Math.min(255, Math.round(255 * Math.pow((scaled + 0.5) / 255.5, 1 / lightGamma))));
+    return lightGamma === 1 ? Math.round(scaled)
+      : Math.max(0, Math.min(255, Math.round(255 * Math.pow((scaled + 0.5) / 255.5, 1 / lightGamma))));
   };
 
   const lightmapData = new Uint8Array(atlasWidth * atlasHeight * 4).fill(255);
@@ -293,15 +298,12 @@ export function buildBspMeshes(bsp: BspFile, options: BspMeshOptions = {}): BspM
   }
 
   const lightmapTexture = new THREE.DataTexture(lightmapData, atlasWidth, atlasHeight, THREE.RGBAFormat);
-  lightmapTexture.magFilter = THREE.NearestFilter;
-  lightmapTexture.minFilter = THREE.NearestFilter;
+  // 功能：原版光照图采用双线性采样，避免暗部出现 luxel 方块。时间：2026-11-05；作者：lq。
+  lightmapTexture.magFilter = THREE.LinearFilter;
+  lightmapTexture.minFilter = THREE.LinearFilter;
   lightmapTexture.generateMipmaps = false;
-  // GoldSrc uses lightmaps as a *multiplier* through the fixed-function
-  // pipeline (GL_MODULATE in gamma space), with an overbright factor of 2 from
-  // the Quake lineage. Treating the bytes as an sRGB colour instead runs them
-  // through a linearisation that darkens the whole map by ~3x — which is exactly
-  // why real maps looked pitch black while the self-baked ones looked fine.
-  lightmapTexture.colorSpace = bytesPerLuxel === 3 ? THREE.NoColorSpace : THREE.SRGBColorSpace;
+  // 功能：贴图和光照均声明 sRGB，由渲染器解码后相乘，输出重新编码，接近 GoldSrc gamma 空间调制。时间：2026-11-05；作者：lq。
+  lightmapTexture.colorSpace = THREE.SRGBColorSpace;
   // Three.js picks the UV set from texture.channel (0 -> 'uv', 1 -> 'uv1').
   // The lightmap must sample the second UV channel or it would be sampled with
   // the diffuse texture coordinates.
@@ -452,9 +454,8 @@ export function buildBspMeshes(bsp: BspFile, options: BspMeshOptions = {}): BspM
     const material = new THREE.MeshBasicMaterial({
       map: textures[textureIndex] ?? null,
       lightMap: lightmapTexture,
-      // Valve ships raw luxels that the engine multiplies by two; this project's
-      // own compiler bakes display-ready values.
-      lightMapIntensity: 1,
+      // 功能：Three r186 MeshBasic 的 lightMap 自带 RECIPROCAL_PI；乘 π 恢复 GoldSrc 的单位调制，防止整图压暗。时间：2026-11-05；作者：lq。
+      lightMapIntensity: Math.PI,
       fog: true,
       transparent: isWater,
       opacity: isWater ? 0.72 : 1,

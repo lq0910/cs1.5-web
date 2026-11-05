@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { v3 } from '../src/engine/math.ts';
-import { grenadeLaunch, heDamage } from '../src/game/grenades.ts';
+import { grenadeLaunch, heDamage, GRENADE_PULLPIN_TIME, GRENADE_THROW_TIME } from '../src/game/grenades.ts';
 
 // 功能：验证高爆手雷使用 100 基础伤害、350 单位边界的衰减曲线。时间：2026-09-30；作者：lq。
 test('HE damage falls to zero at the original blast radius', () => {
@@ -20,7 +20,10 @@ function grenadeMatch(map = makeTestRoom(4096, 2048)): Match {
   const match = new Match({ map, graph: null, sites: [], teamSize: 1 });
   match.startNow();
   match.mode.phase = 'live';
-  for (const actor of match.actors) actor.combat.selectSlot(3, 0);
+  // 功能：测试覆盖多次完整投掷，不能继承冻结阶段的短倒计时。时间：2026-11-05；作者：lq。
+  match.mode.timeLeft = 600;
+  // 功能：完整拔销后测试更久，防止 BOT 刀伤导致回合提前结束而干扰引信断言。时间：2026-11-05；作者：lq。
+  for (const actor of match.actors) { actor.combat.selectSlot(3, 0); actor.health = 100000; }
   match.player!.move.origin = v3(0, 0, 36);
   return match;
 }
@@ -67,7 +70,7 @@ test('all player grenades remain infinite across repeated throws and spawn outsi
   for (const kind of ['hegrenade', 'flashbang', 'smokegrenade', 'hegrenade'] as const) {
     player.selectedGrenade = kind;
     command.buttons = IN_ATTACK;
-    for (let i = 0; i < 40; i++) match.update(now += TICK_INTERVAL, command);
+    for (let i = 0; i < Math.ceil(GRENADE_PULLPIN_TIME / TICK_INTERVAL) + 1; i++) match.update(now += TICK_INTERVAL, command);
     command.buttons = 0;
     match.update(now += TICK_INTERVAL, command);
     const grenade = match.grenadeProjectiles.at(-1)!;
@@ -77,7 +80,7 @@ test('all player grenades remain infinite across repeated throws and spawn outsi
     assert.notEqual(map.collision.pointContents(grenade.position), -2);
     assert.ok(Math.abs(grenade.detonateAt - now - (kind === 'smokegrenade' ? 3 : 1.5)) < 1e-6);
     match.grenadeProjectiles.length = 0;
-    for (let i = 0; i < 24; i++) match.update(now += TICK_INTERVAL, command);
+    for (let i = 0; i < Math.ceil(GRENADE_THROW_TIME / TICK_INTERVAL) + 1; i++) match.update(now += TICK_INTERVAL, command);
     assert.equal(player.grenadeAction, null);
   }
 });

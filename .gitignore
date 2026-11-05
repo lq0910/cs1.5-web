@@ -8,6 +8,10 @@ release/
 .chrome-profile/
 shots/
 
+# 功能：浏览器验收记录和截图仅保留本地。时间：2026-11-05；作者：lq。
+.playwright-cli/
+output/playwright/
+
 # Extracted Counter-Strike assets: never committed, never redistributed.
 public/cstrike/
 cs1.5/

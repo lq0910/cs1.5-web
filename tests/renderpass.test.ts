@@ -121,6 +121,8 @@ for (const dpr of [1, 1.25, 1.5, 2, 3]) {
       assert.deepEqual(canvas.style, { width: '1080px', height: '600px' });
       assert.equal(renderer.camera.aspect, 1.8);
       assert.equal(viewCamera.aspect, 1.8);
+      // 功能：世界与武器使用相同的水平 90° 基准，Retina/宽屏不裁掉手臂。时间：2026-11-05；作者：lq。
+      assert.equal(viewCamera.fov, renderer.camera.fov);
       assert.ok(Math.abs(renderer.camera.fov - 2 * Math.atan(1 / 1.8) * 180 / Math.PI) < 1e-9);
     });
   });

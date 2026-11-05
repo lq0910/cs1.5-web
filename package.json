@@ -1,7 +1,7 @@
 {
   "name": "cs15-web",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Browser-based Counter-Strike 1.5 style FPS (GoldSrc-faithful movement + BSP maps)",
   "scripts": {

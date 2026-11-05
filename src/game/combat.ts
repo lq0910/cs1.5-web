@@ -20,6 +20,8 @@ import {
   decayPunch,
   reloadDuration,
   spreadOffset,
+  // 功能：各枪独立开镜档数，防止 AUG 错用 AWP 双档。时间：2026-11-05；作者：lq。
+  weaponZoomLevels,
 } from './weapons.ts';
 import type { PunchAngle } from './weapons.ts';
 import { IN_ATTACK, IN_ATTACK2, IN_RELOAD } from './constants.ts';
@@ -181,6 +183,8 @@ export class CombatSystem {
   readonly loadout: Record<WeaponSlot, WeaponRuntime>;
   private slot: WeaponSlot = 1;
   private punch: PunchAngle = { pitch: 0, yaw: 0 };
+  // 功能：每个武器保留横向后坐方向，切枪后不共享固定喷射曲线。时间：2026-11-05；作者：lq。
+  private readonly recoilDirections = new Map<WeaponId, { right: boolean }>();
   private attackHeld = false;
   private altHeld = false;
   private readonly random: () => number;
@@ -289,7 +293,7 @@ export class CombatSystem {
     if (altPressed && !this.altHeld && !deploying && !reloading) {
       if (weapon.canScope) {
         // 功能：右键按下按 0→一档→二档→退出循环，使用 CS 1.5 AWP 的 40°/10° 两段视野。时间：2026-09-30；作者：lq。
-        runtime.zoomLevel = ((runtime.zoomLevel + 1) % 3) as 0 | 1 | 2;
+        runtime.zoomLevel = ((runtime.zoomLevel + 1) % weaponZoomLevels(runtime.id).length) as 0 | 1 | 2;
         runtime.scoped = runtime.zoomLevel > 0;
       } else if (weapon.sounds.altFire) {
         // Knife stab: a slower, much harder hit.
@@ -401,11 +405,17 @@ export class CombatSystem {
     runtime.shotIndex++;
 
     // 功能：在子弹完成命中检测后施加本发枪口后坐力，保持原版“当前子弹不受自身后坐力影响、下一发受到影响”的时序。时间：2026-09-30；作者：lq。
-    this.punch = applyRecoil(this.punch, weapon, runtime.shotIndex - 1);
+    // 功能：后坐力使用射手当前的移动、蹲伏和落地状态。时间：2026-11-05；作者：lq。
+    const recoilDirection = this.recoilDirections.get(runtime.id) ?? { right: false };
+    this.recoilDirections.set(runtime.id, recoilDirection);
+    this.punch = applyRecoil(this.punch, weapon, runtime.shotIndex - 1, shooter, this.random, recoilDirection);
 
     // A scoped sniper drops out of the scope for the bolt cycle, which is
     // already enforced by nextFireTime.
-    if (weapon.canScope) runtime.scoped = false;
-    if (weapon.canScope) runtime.zoomLevel = 0;
+    // 功能：只有手动拉栓狙击枪击发后退镜，连狙与 AUG/SG552 射击时维持当前放大。时间：2026-11-05；作者：lq。
+    if (runtime.id === 'awp' || runtime.id === 'scout') {
+      runtime.scoped = false;
+      runtime.zoomLevel = 0;
+    }
   }
 }

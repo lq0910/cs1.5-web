@@ -17,6 +17,7 @@
  * all in combat.ts so they can be unit-tested without a browser.
  */
 
+import { classicRecoil, type RecoilMotion, type RecoilDirection } from './classicRecoil.ts';
 import { clamp } from '../engine/math.ts';
 
 export type CoreWeaponId =
@@ -540,6 +541,11 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
   smokegrenade: extraWeapon('smokegrenade', 'Smoke Grenade', 'knife', 300, 0, 1, 1, 'hegrenade-1.wav'),
 };
 
+// 功能：DefaultDeploy 默认开火锁定 0.75 秒，AWP/Scout 覆盖较长的拉栓准备。时间：2026-11-05；作者：lq。
+for (const definition of Object.values(WEAPONS)) definition.deployTime = 0.75;
+WEAPONS.awp.deployTime = 1.45;
+WEAPONS.scout.deployTime = 1.25;
+
 for (const id of ['hegrenade', 'flashbang', 'smokegrenade'] as const) WEAPONS[id].slot = 4;
 WEAPONS.m3.automatic = false;
 WEAPONS.xm1014.automatic = false;
@@ -560,6 +566,19 @@ export const WEAPON_ORDER: WeaponId[] = [
 
 export function weaponById(id: WeaponId): WeaponDef {
   return WEAPONS[id];
+}
+
+/** 功能：按各枪 SecondaryAttack 的 FOV 区分 AWP 双档、其他狙击双档与 AUG/SG552 单档放大。时间：2026-11-05；作者：lq。 */
+export function weaponZoomLevels(id: WeaponId): readonly number[] {
+  if (id === 'awp') return [90, 40, 10];
+  if (id === 'scout' || id === 'g3sg1' || id === 'sg550') return [90, 40, 15];
+  if (id === 'aug' || id === 'sg552') return [90, 55];
+  return [90];
+}
+
+/** 功能：相机读取与武器开镜状态机相同的视野表，退出开镜后恢复 90 度。时间：2026-11-05；作者：lq。 */
+export function weaponZoomFov(id: WeaponId, level: number): number {
+  return weaponZoomLevels(id)[level] ?? 90;
 }
 
 // --------------------------------------------------------------- accuracy
@@ -611,39 +630,24 @@ export interface PunchAngle {
   yaw: number;
 }
 
-/**
- * Applies one shot's worth of recoil to the punch angle.
- * `shotIndex` walks the weapon's spray pattern; it is expected to be reset after
- * a pause (see combat.ts).
- */
+/** 功能：按武器和当前姿态应用原版 KickBack，连发计数在停火后重置。时间：2026-11-05；作者：lq。 */
 export function applyRecoil(
   punch: PunchAngle,
   weapon: WeaponDef,
   shotIndex: number,
+  motion: RecoilMotion = { speed: 0, onGround: true, ducked: false },
+  random: () => number = Math.random,
+  direction: RecoilDirection = { right: false },
 ): PunchAngle {
-  const pattern = weapon.recoil.pattern;
-  const entry = pattern[Math.min(shotIndex, pattern.length - 1)] ?? [0, 0];
-
-  let pitch = punch.pitch - entry[1]; // screen up = negative pitch in GoldSrc
-  let yaw = punch.yaw + entry[0];
-
-  if (shotIndex === 0) {
-    pitch -= weapon.recoil.firstShotKick;
-  }
-
-  const limit = weapon.recoil.maxPunch;
-  pitch = clamp(pitch, -limit, limit);
-  yaw = clamp(yaw, -(weapon.recoil.maxYawPunch ?? limit), weapon.recoil.maxYawPunch ?? limit);
-
-  return { pitch, yaw };
+  // 功能：默认静止站立，实际战斗传入运动状态、随机源与武器方向。时间：2026-11-05；作者：lq。
+  return classicRecoil(punch, weapon.id, shotIndex, motion, random, direction);
 }
 
-/** Decays the punch angle towards zero. */
-export function decayPunch(punch: PunchAngle, weapon: WeaponDef, dt: number): PunchAngle {
-  const recovery = weapon.recoil.recovery * dt;
+/** 功能：移植 Valve SDK V_DropPunchAngle 的幅度相关回正，移除每把枪不同的线性回正。时间：2026-11-05；作者：lq。 */
+export function decayPunch(punch: PunchAngle, _weapon: WeaponDef, dt: number): PunchAngle {
   const magnitude = Math.hypot(punch.pitch, punch.yaw);
-  if (magnitude <= recovery || magnitude === 0) return { pitch: 0, yaw: 0 };
-  const scale = (magnitude - recovery) / magnitude;
+  if (magnitude === 0) return { pitch: 0, yaw: 0 };
+  const scale = Math.max(0, magnitude - (10 + magnitude * 0.5) * Math.max(0, dt)) / magnitude;
   return { pitch: punch.pitch * scale, yaw: punch.yaw * scale };
 }
 
@@ -671,7 +675,8 @@ export function defaultLoadout(): Record<WeaponSlot, WeaponId> {
   return { 1: 'ak47', 2: 'usp45', 3: 'knife' };
 }
 
-/** 功能：将原版换弹基准时长压缩约 18%，并统一供弹药计时、动画和音效使用。时间：2026-09-29；作者：lq。 */
+/** 功能：统一使用武器换弹基准时长，供弹药计时、动画和音效共用。时间：2026-11-05；作者：lq。 */
 export function reloadDuration(id: WeaponId): number {
-  return WEAPONS[id].reloadTime * 0.82;
+  // 功能：取消人为加速换弹，保持原版业务计时与 MDL 播放速度。时间：2026-11-05；作者：lq。
+  return WEAPONS[id].reloadTime;
 }

@@ -14,11 +14,13 @@ import { HULL_STANDING } from '../src/engine/collision/types.ts';
 import { makeTestRoom } from '../src/game/map/build.ts';
 import { createActor, damageActor, traceActors, PLAYER_HITBOXES } from '../src/game/actors.ts';
 import { aimDirection, applyArmor, damageAtDistance, makeWeaponRuntime } from '../src/game/combat.ts';
+import { GRENADE_PULLPIN_TIME } from '../src/game/grenades.ts';
 import { WEAPONS } from '../src/game/weapons.ts';
 import { GameMode, BUY_MENU, buyMenuOptions } from '../src/game/gamemode.ts';
 import { Match, idleCommand } from '../src/game/match.ts';
 import { buildNavGraph } from '../src/game/nav.ts';
-import { IN_ATTACK, IN_USE, TICK_INTERVAL } from '../src/game/constants.ts';
+// 功能：回归测试覆盖回合结束后移动与跳跃。时间：2026-11-05；作者：lq。
+import { IN_ATTACK, IN_USE, IN_JUMP, TICK_INTERVAL } from '../src/game/constants.ts';
 
 function actorAt(x: number, y: number, team: 'ct' | 't' = 't') {
   return createActor({
@@ -166,6 +168,44 @@ test('round phases advance and elimination ends the round', () => {
   assert.ok(ct.money > 800, `CT money should grow, got ${ct.money}`);
 });
 
+// 功能：模拟浏览器首次进入的真实更新顺序，第一 tick 直接实战、移动、购买，无准备倒计时。时间：2026-11-05；作者：lq。
+test('default opening starts immediately and permits movement and purchases', () => {
+  const match = new Match({ map: makeTestRoom(2048), graph: null, sites: [], teamSize: 1, seed: 51 });
+  const player = match.player!;
+  match.update(TICK_INTERVAL, { ...idleCommand(0), forwardmove: 400 });
+  assert.equal(match.mode.phase, 'live');
+  assert.equal(match.mode.timeLeft, 180);
+  assert.ok(player.move.velocity.x > 0, 'the opening tick must accept movement');
+  assert.ok(match.mode.buy(player, 'awp'), 'buying must work with no freeze phase');
+  assert.equal(player.combat.loadout[1].id, 'awp');
+});
+
+// 功能：回合判胜同帧和五秒结算内仍可移动跳跃，积分仅结算一次；换局立即恢复购买。时间：2026-11-05；作者：lq。
+test('survivor moves and jumps during round end and restarts without a freeze', () => {
+  const match = new Match({ map: makeTestRoom(2048), graph: null, sites: [], teamSize: 1, seed: 52 });
+  match.startNow();
+  const player = match.player!;
+  player.move.origin = v3(0, 0, 36);
+  player.move.onground = true;
+  match.actors.find((actor) => actor.team !== player.team)!.alive = false;
+  const round = match.mode.round;
+  const start = { ...player.move.origin };
+  const result = match.update(TICK_INTERVAL, { ...idleCommand(0), forwardmove: 400, buttons: IN_JUMP });
+  assert.equal(result.mode.roundEnded?.winner, player.team);
+  assert.equal(match.mode.phase, 'over');
+  assert.ok(player.move.velocity.x > 0, 'round-end tick should preserve horizontal input');
+  assert.ok(player.move.velocity.z > 0, 'round-end tick should preserve jumping');
+  // 功能：覆盖空中加速限速和落地后的继续跑动，不把正常跳跃物理误判成冻结。时间：2026-11-05；作者：lq。
+  for (let tick = 2; tick <= 96; tick++) match.update(tick * TICK_INTERVAL, { ...idleCommand(0), forwardmove: 400 });
+  assert.ok(player.move.origin.x > start.x + 50, 'survivor should keep moving during the result banner');
+  assert.equal(match.mode.score[player.team], 1, 'movement must not re-award a decided round');
+  assert.equal(match.mode.round, round);
+  for (let tick = 97; tick <= 325; tick++) match.update(tick * TICK_INTERVAL, idleCommand(0));
+  assert.equal(match.mode.round, round + 1);
+  assert.equal(match.mode.phase, 'live');
+  assert.ok(match.mode.buy(player, 'awp'), 'purchase should be available after the automatic restart');
+});
+
 // 功能：验证玩家阵亡不会被 Match 特殊重置，仍由正常回合胜负决定下一局。时间：2026-09-30；作者：lq。
 test('a dead player remains in spectator state until the round ends', () => {
   const match = new Match({ map: makeTestRoom(512, 256), graph: null, sites: [], teamSize: 2, seed: 71 });
@@ -188,7 +228,8 @@ test('a dead player remains in spectator state until the round ends', () => {
   assert.equal(player.alive, false);
   for (let tick = 1; tick <= 5 / TICK_INTERVAL; tick++) match.update(1.1 + tick * TICK_INTERVAL, idleCommand(0));
   assert.equal(match.mode.round, roundBefore + 1);
-  assert.equal(match.mode.phase, 'freeze');
+  // 功能：默认换局无冻结，复活同帧进入实战。时间：2026-11-05；作者：lq。
+  assert.equal(match.mode.phase, 'live');
   assert.equal(player.alive, true);
 });
 
@@ -501,8 +542,7 @@ test('bots turn to face a visible enemy and open fire', () => {
   const match = new Match({ map, graph, sites: [], teamSize: 2, skill: 0.8, seed: 99, playerTeam: 't' });
   match.startNow(0);
 
-  // Freeze time: nothing may move or shoot yet, so skip past warmup + freeze
-  // before expecting a firefight (this is exactly what CS does).
+  // 功能：兼容显式配置的准备阶段；默认回合已立即进入实战。时间：2026-11-05；作者：lq。
   let warmup = 0;
   for (let tick = 0; tick < 64 * 12 && match.mode.phase !== 'live'; tick++) {
     warmup += TICK_INTERVAL;
@@ -611,7 +651,8 @@ test('grenade flies, bounces and explodes at its final world position', () => {
   let now = 0;
   const command = idleCommand(90);
   command.buttons = IN_ATTACK;
-  for (let i = 0; i < 48; i++) match.update(now += TICK_INTERVAL, command);
+  // 功能：等待原版 40/41 秒拔销动作完成，不再假设旧版 0.55 秒。时间：2026-11-05；作者：lq。
+  for (let i = 0; i < Math.ceil(GRENADE_PULLPIN_TIME / TICK_INTERVAL) + 2; i++) match.update(now += TICK_INTERVAL, command);
   assert.equal(player.grenadeAction, 'hold');
   command.buttons = 0;
   match.update(now += TICK_INTERVAL, command);

@@ -1,6 +1,7 @@
 [package]
 name = "cs15_web"
-version = "0.1.0"
+# 功能：桌面端版本与网页版本保持一致。时间：2026-11-05；作者：lq。
+version = "0.1.1"
 description = "CS 1.5 Web desktop shell"
 authors = ["lq"]
 edition = "2021"

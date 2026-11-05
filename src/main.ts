@@ -38,7 +38,8 @@ import { spectatorCameraPose } from './game/spectator.ts';
 import type { GrenadeKind } from './game/match.ts';
 import { BUY_MENU, DEFUSE_RADIUS, buyMenuOptions } from './game/gamemode.ts';
 import { makeUserCmd } from './game/movement.ts';
-import { WEAPONS, reloadDuration } from './game/weapons.ts';
+// 功能：显示层使用武器各自的放大倍率。时间：2026-11-05；作者：lq。
+import { WEAPONS, reloadDuration, weaponZoomFov } from './game/weapons.ts';
 import type { WeaponSlot } from './game/weapons.ts';
 import type { WeaponId } from './game/weapons.ts';
 import { Hud } from './ui/hud.ts';
@@ -811,7 +812,7 @@ function frame(now: number): void {
       }
       pendingSpray = false;
     }
-    // 功能：换弹音效分段贴合缩短后的原版模型动作，换枪或阵亡时丢弃未播放的声音。时间：2026-09-29；作者：lq。
+    // 功能：换弹音效按完整时长分段播放，换枪或阵亡时丢弃未播放的声音。时间：2026-11-05；作者：lq。
     for (const reload of events.reloads) {
       if (reload.actor !== playerActor) continue;
       const sounds = WEAPONS[reload.weapon].sounds;
@@ -1027,7 +1028,7 @@ function frame(now: number): void {
   const scoped = alive && runtime.scoped && !playerActor.selectedGrenade;
 
   // 功能：AWP 一档使用原版约 40°视野，二档使用约 10°视野，准星始终锁定屏幕中心。时间：2026-09-30；作者：lq。
-  const targetFov = scoped ? (runtime.zoomLevel === 2 ? 10 : 40) : 90;
+  const targetFov = scoped ? weaponZoomFov(runtime.id, runtime.zoomLevel) : 90;
   if (renderer.fovHorizontal !== targetFov) {
     renderer.fovHorizontal = targetFov;
     renderer.resize(container.clientWidth, container.clientHeight);
@@ -1037,24 +1038,12 @@ function frame(now: number): void {
   else if (!spectator || !spectator.alive) spectator = chooseSpectator();
   const observed = spectator ?? playerActor;
   viewModel.setVisible(alive);
-  // 功能：阵亡后改用墙体避让的第三人称追随镜头，可看到队友模型和场上尸体。时间：2026-09-29；作者：lq。
-  if (alive) renderer.setView(
-    // 功能：蹲伏时补偿 hull 中心下移，使用较低但不贴地的 GoldSrc 视线高度；时间：2026-10-31；作者：lq。
-    v3(playerActor.move.origin.x, playerActor.move.origin.y, playerActor.move.origin.z + (playerActor.move.ducked ? 28 : 17)),
-    lookPitch + punch.pitch,
-    lookYaw + punch.yaw,
-  );
-  else {
-    const chase = spectatorCameraPose(observed, map.collision);
-    renderer.setView(chase.origin, chase.pitch, chase.yaw);
-  }
-  renderer.camera.updateMatrixWorld();
-
   viewModel.update(simulationActive ? dt : 0, {
     speed: Math.hypot(playerActor.move.velocity.x, playerActor.move.velocity.y),
     onGround: playerActor.move.onground,
     ducked: playerActor.move.ducked,
-    scoped,
+    // 功能：步枪放大保留枪身，只有狙击枪圆形镜口隐藏第一人称模型。时间：2026-11-05；作者：lq。
+    scoped: scoped && weaponDef.kind === 'sniper',
     reloadProgress,
     deployProgress,
     grenadeAction: playerActor.grenadeAction,
@@ -1065,6 +1054,20 @@ function frame(now: number): void {
     pitch: lookPitch,
     yaw: lookYaw,
   });
+  // 功能：阵亡后改用墙体避让的第三人称追随镜头，可看到队友模型和场上尸体。时间：2026-09-29；作者：lq。
+  if (alive) renderer.setView(
+    // 功能：蹲伏时补偿 hull 中心下移，使用较低但不贴地的 GoldSrc 视线高度；时间：2026-10-31；作者：lq。
+    // 功能：V_CalcBob 的竖直位移同时作用于视角，枪械层只保留相对前后位移。时间：2026-11-05；作者：lq。
+    v3(playerActor.move.origin.x, playerActor.move.origin.y,
+      playerActor.move.origin.z + (playerActor.move.ducked ? 28 : 17) + viewModel.cameraBob),
+    lookPitch + punch.pitch,
+    lookYaw + punch.yaw,
+  );
+  else {
+    const chase = spectatorCameraPose(observed, map.collision);
+    renderer.setView(chase.origin, chase.pitch, chase.yaw);
+  }
+  renderer.camera.updateMatrixWorld();
 
   // Park the probe 500 units in front of the camera.
   if (probe) {
@@ -1140,6 +1143,8 @@ function frame(now: number): void {
         simTime,
       ),
       scoped,
+      // 功能：HUD 镜口只用于狙击枪，普通带镜步枪仅改变世界视野。时间：2026-11-05；作者：lq。
+      sniperScope: weaponDef.kind === 'sniper',
       phase: match.mode.phase,
       phaseTime: clockText(),
       scoreCT: match.mode.score.ct,

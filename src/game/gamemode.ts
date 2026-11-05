@@ -169,8 +169,9 @@ export class GameMode {
   constructor(sites: ObjectiveArea[], options: GameModeOptions = {}) {
     this.sites = sites;
     this.options = {
-      warmupTime: options.warmupTime ?? 3,
-      freezeTime: options.freezeTime ?? 5,
+      // 功能：默认采用无等待开局（mp_freezetime 0 的体验），进入和换局即可移动购买；显式冻结配置仍受支持。时间：2026-11-05；作者：lq。
+      warmupTime: options.warmupTime ?? 0,
+      freezeTime: options.freezeTime ?? 0,
       roundTime: options.roundTime ?? DEFAULT_ROUND_TIME,
       bombTime: options.bombTime ?? 35,
       defuseTime: options.defuseTime ?? 10,
@@ -228,8 +229,9 @@ export class GameMode {
   /** Starts a fresh round: positions, money, bomb carrier. */
   startRound(actors: Actor[], spawns: { ct: Vec3[]; t: Vec3[] }, now: number, events: RoundEvents): void {
     this.round++;
-    this.phase = 'freeze';
-    this.timeLeft = this.options.freezeTime;
+    // 功能：零冻结时直接进入实战，消除 0 秒准备帧，首次开局和后续换局共用该规则。时间：2026-11-05；作者：lq。
+    this.phase = this.options.freezeTime > 0 ? 'freeze' : 'live';
+    this.timeLeft = this.options.freezeTime > 0 ? this.options.freezeTime : this.options.roundTime;
     this.bomb = {
       state: 'carried',
       carrier: null,

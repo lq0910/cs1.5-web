@@ -4,6 +4,8 @@
  */
 
 import type { Vec3 } from '../engine/math.ts';
+// 功能：原版狙击镜精灵与视口遮罩独立绘制。时间：2026-11-05；作者：lq。
+import { ScopeOverlay } from './scope.ts';
 
 export interface KillFeedLine {
   killer: string;
@@ -36,6 +38,8 @@ export interface HudData {
   armor: number;
   coneDeg: number;
   scoped: boolean;
+  /** 功能：区分狙击镜与 AUG/SG552 的普通放大视野。时间：2026-11-05；作者：lq。 */
+  sniperScope?: boolean;
   /** Round state. */
   phase: string;
   phaseTime: string;
@@ -85,6 +89,8 @@ export class Hud {
   private readonly element: HTMLElement;
   private readonly crosshair: HTMLElement;
   private readonly scope: HTMLElement;
+  /** 功能：持有镜口画布，只在开镜且尺寸变化时绘制。时间：2026-11-05；作者：lq。 */
+  private readonly scopeOverlay: ScopeOverlay;
   private readonly status: HTMLElement;
   private readonly roundBar: HTMLElement;
   private readonly feed: HTMLElement;
@@ -110,6 +116,7 @@ export class Hud {
     this.element = options.hud;
     this.crosshair = options.crosshair;
     this.scope = options.scope;
+    this.scopeOverlay = new ScopeOverlay(options.scope);
     this.status = options.status;
     this.roundBar = options.roundBar;
     this.feed = options.feed;
@@ -142,8 +149,11 @@ export class Hud {
     // Dynamic crosshair.
     const gap = 4 + Math.min(48, data.coneDeg * 6.5);
     this.crosshair.style.setProperty('--gap', `${gap.toFixed(1)}px`);
-    this.crosshair.classList.toggle('scoped', data.scoped || data.dead);
-    this.scope.classList.toggle('on', data.scoped && !data.dead);
+    // 功能：只有狙击枪使用圆形镜口，AUG/SG552 放大时保留普通准星。时间：2026-11-05；作者：lq。
+    const sniperScope = data.scoped && data.sniperScope !== false;
+    this.crosshair.classList.toggle('scoped', sniperScope || data.dead);
+    this.scope.classList.toggle('on', sniperScope && !data.dead);
+    if (sniperScope && !data.dead) this.scopeOverlay.resize(window.innerWidth, window.innerHeight, window.devicePixelRatio);
     // 功能：简化原版圆形雷达，中心为玩家，绿色点标记队友、红色点标记敌人。时间：2026-09-30；作者：lq。
     this.radar.innerHTML = '<span class="self"></span>' + data.radarDots.map((dot) =>
       `<span class="${dot.relation}" style="left:${Math.max(4, Math.min(96, dot.x)).toFixed(1)}%;top:${Math.max(4, Math.min(96, dot.y)).toFixed(1)}%"></span>`,
@@ -178,17 +188,21 @@ export class Hud {
       `<span class="money">$${Number.isFinite(data.money) ? data.money : '∞'}</span>` +
       `<span class="ammo">${ammoText}</span>`;
 
-    // 功能：按住 Tab 显示原版半透明战绩表，双方角色按击杀数排序，死亡者标为阵亡。时间：2026-09-30；作者：lq。
+    // 功能：恢复 CS 经典单表列布局、红蓝队伍、队伍人数/比分、Dead 与 BOT 延迟列。时间：2026-11-05；作者：lq。
     this.scoreboard.classList.toggle('on', data.scoreboardOpen);
     if (data.scoreboardOpen) {
-      const teamRows = (team: 'ct' | 't') => data.scoreRows.filter((row) => row.team === team)
-        .sort((a, b) => b.kills - a.kills || a.deaths - b.deaths)
-        .map((row) => `<tr class="${row.alive ? '' : 'out'} ${row.local ? 'local' : ''}"><td>${escapeHtml(row.name)}${row.local ? ' *' : ''}</td><td>${row.kills}</td><td>${row.deaths}</td><td>${row.alive ? '存活' : '阵亡'}</td></tr>`).join('');
-      this.scoreboard.innerHTML = `<div class="scoreboard-head">Counter-Strike · ${escapeHtml(data.mapName)}</div>` +
-        `<div class="scoreboard-team ct">Counter-Terrorists <span>胜场 ${data.scoreCT}</span></div>` +
-        `<table><thead><tr><th>玩家</th><th>击杀</th><th>阵亡</th><th>状态</th></tr></thead><tbody>${teamRows('ct')}</tbody></table>` +
-        `<div class="scoreboard-team t">Terrorists <span>胜场 ${data.scoreT}</span></div>` +
-        `<table><thead><tr><th>玩家</th><th>击杀</th><th>阵亡</th><th>状态</th></tr></thead><tbody>${teamRows('t')}</tbody></table>`;
+      const teamSection = (team: 'ct' | 't', title: string, score: number) => {
+        const rows = data.scoreRows.filter((row) => row.team === team)
+          .sort((a, b) => b.kills - a.kills || a.deaths - b.deaths || a.name.localeCompare(b.name));
+        const deaths = rows.reduce((sum, row) => sum + row.deaths, 0);
+        return `<tbody class="${team}"><tr class="scoreboard-team"><td>${title} — ${rows.length} players</td><td></td><td>${score}</td><td>${deaths}</td><td></td></tr>` +
+          rows.map((row) => `<tr class="player ${row.local ? 'local' : ''}"><td>${escapeHtml(row.name)}</td><td>${row.alive ? '' : 'Dead'}</td><td>${row.kills}</td><td>${row.deaths}</td><td>${row.local ? '0' : 'BOT'}</td></tr>`).join('') +
+          '<tr class="scoreboard-spacer"><td colspan="5"></td></tr></tbody>';
+      };
+      this.scoreboard.innerHTML = `<div class="scoreboard-head">Counter-Strike <span>${escapeHtml(data.mapName)}</span></div>` +
+        '<table aria-label="Scoreboard"><colgroup><col class="name"><col class="state"><col class="number"><col class="number"><col class="latency"></colgroup>' +
+        '<thead><tr><th>Player</th><th></th><th>Score</th><th>Deaths</th><th>Latency</th></tr></thead>' +
+        teamSection('t', 'Terrorists', data.scoreT) + teamSection('ct', 'Counter-Terrorists', data.scoreCT) + '</table>';
     }
     this.radioCaption.textContent = data.radioLine;
     this.radioCaption.classList.toggle('on', data.radioLine.length > 0);

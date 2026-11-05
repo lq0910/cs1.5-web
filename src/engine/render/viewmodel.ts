@@ -6,9 +6,11 @@
 import * as THREE from 'three';
 import type { WeaponId } from '../../game/weapons.ts';
 import type { PunchAngle } from '../../game/weapons.ts';
+import { GRENADE_PULLPIN_TIME, GRENADE_THROW_TIME } from '../../game/grenades.ts';
 import { reloadDuration } from '../../game/weapons.ts';
 import { getMaterial } from './textures.ts';
-import { buildStudio, disposeStudio, loadStudio, setStudioPose, studioSequenceFrames, studioViewMuzzlePosition } from './studio.ts';
+import { buildStudio, disposeStudio, loadStudio, setStudioPose, studioSequence, studioViewMuzzlePosition } from './studio.ts';
+import { verticalFovForHorizontal } from './boxGeometry.ts';
 import { makeMuzzleTexture } from './muzzle.ts';
 
 export interface ViewModelState {
@@ -28,7 +30,7 @@ export interface ViewModelState {
   bombPlantProgress: number;
   now: number;
   punch: PunchAngle;
-  /** View angles this frame (for sway lag). */
+  /** 功能：保留当前视角输入，不添加鼠标滞后横摆。时间：2026-11-05；作者：lq。 */
   pitch: number;
   yaw: number;
 }
@@ -42,8 +44,15 @@ const REST = {
   knife: { x: 0.2, y: -0.18, z: -0.34, yaw: -0.12, pitch: -0.05, roll: 0.06 },
 };
 
-// 功能：按 CS 1.5 第一人称视图比例放大原版 v_ 模型，使枪和双臂在 16:9 画面中占据与原版一致的下方区域。时间：2026-09-30；作者：lq。
-const VIEWMODEL_MODEL_SCALE = 1.2;
+/** 功能：移植 Valve SDK view.cpp 的 V_CalcBob，默认 cl_bob=0.01、cycle=0.8、up=0.5。时间：2026-11-05；作者：lq。 */
+export function classicBob(time: number, speed: number): number {
+  return THREE.MathUtils.clamp(speed * 0.01 * (0.3 + 0.7 * Math.sin(time / 0.8 * Math.PI * 2)), -7, 4);
+}
+
+// 功能：独立武器层采用较轻的移动幅度，避免 SDK 整体转角使手臂大幅左右摇摆；保留原有步频与镜头 bob。时间：2026-11-05；作者：lq。
+const WEAPON_BOB_SCALE = 0.35;
+// 功能：以时间常数平滑水平速度，减轻固定模拟步长和起停造成的视图跳变。时间：2026-11-05；作者：lq。
+const BOB_SPEED_RESPONSE = 0.08;
 
 function box(
   parent: THREE.Object3D,
@@ -85,23 +94,20 @@ export class ViewModel {
   private studio: THREE.Group | null = null;
   private loadGeneration = 0;
   private weaponId: WeaponId | 'c4' | null = null;
+  // 功能：动作计时独立于网络/战斗冷却，按 MDL 原始 fps 播放到结束。时间：2026-11-05；作者：lq。
   private bobPhase = 0;
-  private swayPitch = 0;
-  private swayYaw = 0;
-  private lastPitch = 0;
-  private lastYaw = 0;
-  private recoil = 0;
-  private lowered = 0;
+  private bob = 0;
+  /** 功能：保存视图用平滑速度，不改变玩家物理速度、枪械散布或脚步声。时间：2026-11-05；作者：lq。 */
+  private bobSpeed = 0;
   private actionSequence = '';
-  private shootTimer = 0;
-  private knifeAction = '';
-  private knifeActionTime = 0;
-  private knifeActionDuration = 0;
-  private knifeSwing = 0;
+  private actionElapsed = 0;
+  private actionKind: 'draw' | 'shoot' | 'knife' | '' = '';
+  private idleElapsed = 0;
+  private shotNumber = 0;
   private flashTimer = 0;
 
   constructor() {
-    this.camera = new THREE.PerspectiveCamera(54, 1, 0.02, 24);
+    this.camera = new THREE.PerspectiveCamera(90, 1, 0.001, 24);
     this.scene.add(this.root);
     // 功能：第一人称枪口焰挂在视图模型枪管上，与枪身一起在独立渲染层显示。时间：2026-09-29；作者：lq。
     this.muzzleFlash = new THREE.Sprite(new THREE.SpriteMaterial({
@@ -119,7 +125,7 @@ export class ViewModel {
     this.scene.add(new THREE.HemisphereLight(0xcfd8e4, 0x6b6252, 0.9));
   }
 
-  /** Recentres the model on a new weapon (called on weapon switch). */
+  /** 功能：切换原版模型并启动拔枪动作，保留作者定义的眼睛坐标原点。时间：2026-11-05；作者：lq。 */
   setWeapon(id: WeaponId | 'c4', kind: 'rifle' | 'sniper' | 'pistol' | 'smg' | 'knife'): void {
     if (this.weaponId === id) return;
     this.weaponId = id;
@@ -136,9 +142,12 @@ export class ViewModel {
     const offset = ViewModel.MUZZLE[kind] ?? ViewModel.MUZZLE.rifle!;
     this.muzzle.position.set(offset[0], offset[1], offset[2]);
     this.root.add(this.weapon);
-    this.recoil = 0;
-    this.knifeAction = '';
-    this.knifeActionTime = 0;
+    this.actionKind = 'draw';
+    this.actionSequence = '';
+    this.actionElapsed = 0;
+    this.idleElapsed = 0;
+    this.flashTimer = 0;
+    this.shotNumber = 0;
     const generation = ++this.loadGeneration;
     // 功能：加载本地原版第一人称枪械皮肤，加载期间保留临时模型。时间：2026-09-29；作者：lq。
     // 功能：持包者选择 C4 时加载安装包的原版第一人称模型。时间：2026-09-30；作者：lq。
@@ -154,8 +163,9 @@ export class ViewModel {
     void loadStudio(`v_${modelName[id]}.mdl`).then((mdl) => {
       if (!mdl || this.loadGeneration !== generation || !this.weapon) return;
       const studio = buildStudio(mdl);
-      // 功能：统一放大原版手臂与枪械网格，保持二者相对挂点不变。时间：2026-09-30；作者：lq。
-      studio.scale.multiplyScalar(VIEWMODEL_MODEL_SCALE);
+      // 功能：保留原版视点及比例，异步加载完成后从 draw 首帧开始播放，避免首次切枪丢失动画。时间：2026-11-05；作者：lq。
+      this.actionKind = 'draw';
+      this.actionElapsed = 0;
       for (const child of [...this.weapon.children]) {
         if (child !== this.muzzle) {
           this.weapon.remove(child);
@@ -170,23 +180,21 @@ export class ViewModel {
     });
   }
 
-  /** Triggers the recoil kick; call once per shot. */
-  kick(strength = 1, alternate = false): void {
-    // 功能：刀的左键交替播放原版两种挥砍，右键播放独立刺击动画。时间：2026-09-29；作者：lq。
-    if (this.weaponId === 'knife') {
-      this.knifeAction = alternate ? 'stab' : this.knifeSwing++ % 2 === 0 ? 'slash1' : 'slash2';
-      this.knifeActionDuration = alternate ? 0.55 : 0.32;
-      this.knifeActionTime = this.knifeActionDuration;
-      return;
-    }
-    // 功能：把本发枪械动作限制为短促后撤，镜头抬升由战斗层 punch 控制，避免枪身与准星双重夸张上跳。时间：2026-09-30；作者：lq。
-    this.recoil = Math.min(1.2, this.recoil + strength);
-    // 功能：触发原版第一人称 shoot1 击发序列，与后坐力和枪口火焰同步。时间：2026-09-29；作者：lq。
-    this.shootTimer = 0.12;
-    if (this.weaponId && !['knife', 'hegrenade', 'flashbang', 'smokegrenade'].includes(this.weaponId)) {
-      this.flashTimer = 0.06;
+  /** 功能：每次开火重启动作，枪械后坐由原版 shoot 序列承担，镜头由 punch 承担。时间：2026-11-05；作者：lq。 */
+  kick(_strength = 1, alternate = false): void {
+    this.shotNumber++;
+    this.actionKind = this.weaponId === 'knife' ? 'knife' : 'shoot';
+    const sequence = this.studio ? studioSequence(this.studio, this.weaponId === 'knife'
+      ? [alternate ? 'stab' : this.shotNumber % 2 ? 'slash1' : 'slash2']
+      : this.weaponId === 'elite'
+        ? [this.shotNumber % 2 ? 'shoot_left1' : 'shoot_right1']
+        : ['shoot' + (1 + (this.shotNumber - 1) % 3), 'shoot', 'shoot1']) : null;
+    this.actionSequence = sequence?.label ?? '';
+    this.actionElapsed = 0;
+    if (this.weaponId !== 'knife') {
+      this.flashTimer = 0.05;
       this.muzzleFlash.visible = true;
-      (this.muzzleFlash.material as THREE.SpriteMaterial).rotation = Math.random() * Math.PI * 2;
+      this.muzzleFlash.material.rotation = Math.random() * Math.PI * 2;
     }
   }
 
@@ -195,102 +203,81 @@ export class ViewModel {
     this.root.visible = visible;
   }
 
+  /** 功能：按原版 Studio 帧率播放拔枪、击发、换弹和投掷，移除自制大幅摇摆与重复后坐力。时间：2026-11-05；作者：lq。 */
   update(dt: number, state: ViewModelState): void {
-    const pose = REST[this.weaponId ? kindOf(this.weaponId) : 'rifle'];
-
-    // ---- sway: the model lags behind the view
-    const deltaPitch = state.pitch - this.lastPitch;
-    const deltaYaw = state.yaw - this.lastYaw;
-    this.lastPitch = state.pitch;
-    this.lastYaw = state.yaw;
-    const swayTargetPitch = THREE.MathUtils.clamp(-deltaPitch * 0.012, -0.09, 0.09);
-    const swayTargetYaw = THREE.MathUtils.clamp(deltaYaw * 0.012, -0.09, 0.09);
-    const swayLerp = 1 - Math.exp(-dt * 12);
-    this.swayPitch += (swayTargetPitch - this.swayPitch) * swayLerp;
-    this.swayYaw += (swayTargetYaw - this.swayYaw) * swayLerp;
-
-    // ---- bob: only while actually moving on the ground
-    const speedFraction = Math.min(1, state.speed / 250);
-    if (state.onGround) {
-      this.bobPhase += dt * (4.6 + speedFraction * 6.5) * Math.max(0.12, speedFraction);
-    }
-    const bobAmount = state.onGround ? speedFraction * (state.ducked ? 0.012 : 0.026) : 0;
-    const bobX = Math.sin(this.bobPhase) * bobAmount;
-    const bobY = -Math.abs(Math.cos(this.bobPhase)) * bobAmount * 0.8;
-
-    // ---- recoil decay
-    this.recoil = Math.max(0, this.recoil - dt * 6.5);
-    this.shootTimer = Math.max(0, this.shootTimer - dt);
-    this.knifeActionTime = Math.max(0, this.knifeActionTime - dt);
-    this.flashTimer = Math.max(0, this.flashTimer - dt);
-    this.muzzleFlash.visible = this.flashTimer > 0;
-    (this.muzzleFlash.material as THREE.SpriteMaterial).opacity = this.flashTimer / 0.06;
-
-    // ---- reload / deploy
-    const reload = state.reloadProgress;
-    this.lowered = state.deployProgress;
-
     const weapon = this.weapon;
     if (!weapon) return;
+    const step = Math.max(0, dt);
+    if (state.onGround && step > 0) {
+      this.bobPhase += step;
+      // 功能：指数响应与渲染帧率无关，停步后快速回稳；暂停和空中保持既有 bob。时间：2026-11-05；作者：lq。
+      this.bobSpeed += (state.speed - this.bobSpeed) * -Math.expm1(-step / BOB_SPEED_RESPONSE);
+      if (this.bobSpeed < 0.01) this.bobSpeed = 0;
+      this.bob = classicBob(this.bobPhase, this.bobSpeed);
+    }
+    this.flashTimer = Math.max(0, this.flashTimer - step);
+    this.muzzleFlash.visible = this.flashTimer > 0;
+    this.muzzleFlash.material.opacity = this.flashTimer / 0.05;
 
-    // 功能：使用 v_*.mdl 的原版动作序列替换简化换弹/投雷姿态。时间：2026-09-29；作者：lq。
     if (this.studio) {
-      const sequence = this.weaponId === 'c4' && state.bombPlantProgress > 0
-        ? 'pressbutton'
-        : state.grenadeAction === 'pullpin'
-        ? 'pullpin'
-        : state.grenadeAction === 'hold'
-          ? 'pullpin'
-        : state.grenadeAction === 'throw'
-          ? 'throw'
-          : this.knifeActionTime > 0 ? this.knifeAction
-          : this.shootTimer > 0 ? 'shoot1'
-          : reload > 0 ? 'reload' : '';
-      if (sequence) {
-        const frames = studioSequenceFrames(this.studio, sequence);
-        const duration = this.weaponId === 'c4' && state.bombPlantProgress > 0 ? 3
-          : state.grenadeAction
-          ? (state.grenadeAction === 'throw' ? 0.35 : 0.55)
-          : this.knifeActionTime > 0 ? this.knifeActionDuration
-          : this.shootTimer > 0 ? 0.12
-          : Math.max(0.1, this.weaponId && this.weaponId !== 'c4' ? reloadDuration(this.weaponId) : 1);
-        const elapsed = this.weaponId === 'c4' && state.bombPlantProgress > 0 ? state.bombPlantProgress * 3
-          : state.grenadeAction
-          ? state.grenadeAction === 'hold' ? duration : Math.max(0, duration - (state.grenadeActionEndTime - state.now))
-          : this.knifeActionTime > 0 ? duration - this.knifeActionTime
-          : this.shootTimer > 0 ? duration - this.shootTimer
-          : duration * (1 - reload);
-        const frame = Math.min(Math.max(0, frames - 1), elapsed / duration * Math.max(0, frames - 1));
-        setStudioPose(this.studio, sequence, frame);
-        this.actionSequence = sequence;
-      } else if (this.actionSequence) {
-        setStudioPose(this.studio, 'idle', 0);
-        this.actionSequence = '';
+      const active = studioSequence(this.studio, this.actionKind === 'draw'
+        ? ['draw', 'deploy'] : [this.actionSequence]);
+      const actionDuration = active ? (active.numFrames - 1) / Math.max(1, active.fps) : 0;
+      if (this.actionElapsed >= actionDuration) this.actionKind = '';
+      let sequence = active;
+      let elapsed = this.actionElapsed;
+      let holdLast = false;
+      if (this.weaponId === 'c4' && state.bombPlantProgress > 0) {
+        sequence = studioSequence(this.studio, ['pressbutton']);
+        elapsed = state.bombPlantProgress * 3;
+      } else if (state.grenadeAction) {
+        sequence = studioSequence(this.studio, [state.grenadeAction === 'throw' ? 'throw' : 'pullpin']);
+        const duration = state.grenadeAction === 'throw' ? GRENADE_THROW_TIME : GRENADE_PULLPIN_TIME;
+        elapsed = Math.max(0, duration - (state.grenadeActionEndTime - state.now));
+        holdLast = state.grenadeAction === 'hold';
+      } else if (state.reloadProgress > 0) {
+        sequence = studioSequence(this.studio, ['reload', 'insert']);
+        elapsed = (1 - state.reloadProgress) * (this.weaponId && this.weaponId !== 'c4' ? reloadDuration(this.weaponId) : 1);
+      } else if (!this.actionKind) {
+        sequence = studioSequence(this.studio, ['idle', 'idle1', 'idle3']);
+        elapsed = this.idleElapsed;
       }
+      if (sequence) {
+        const last = Math.max(0, sequence.numFrames - 1);
+        const rawFrame = elapsed * sequence.fps;
+        const idle = !this.actionKind && !state.grenadeAction && state.reloadProgress <= 0 && state.bombPlantProgress <= 0;
+        const frame = holdLast ? last : idle && last > 0 && (sequence.flags & 1) ? rawFrame % last : Math.min(last, rawFrame);
+        setStudioPose(this.studio, sequence.label, frame);
+      }
+      this.actionElapsed += step;
+      this.idleElapsed += step;
+      // 功能：动作每帧更新枪口挂点，泵动与拔枪时火焰始终附着枪管。时间：2026-11-05；作者：lq。
+      const muzzle = studioViewMuzzlePosition(this.studio);
+      if (muzzle) this.muzzle.position.copy(muzzle);
     }
 
-    // 功能：投掷物加载原版 v_*.mdl 前隐藏临时几何占位，避免烟雾弹显示成刀状几何体；模型成功加载后再显示经典贴图。时间：2026-09-30；作者：lq。
-    const grenadeModel = this.weaponId === 'hegrenade' || this.weaponId === 'flashbang' || this.weaponId === 'smokegrenade';
-    weapon.visible = !state.scoped && (!grenadeModel || this.studio !== null);
-    if (state.scoped) return;
-
-    // 功能：换弹时先放低再抬回武器，避免全程缓慢抬升的迟滞感。时间：2026-09-29；作者：lq。
-    const reloadMotion = Math.sin(Math.PI * (1 - reload));
-    weapon.position.set(
-      pose.x + bobX + this.swayYaw,
-      // The overlay is camera-relative: crouching lowers the world camera, not
-      // the hands' screen-space pose. An extra crouch lift makes the arms float.
-      pose.y + bobY + this.swayPitch - reloadMotion * 0.13 - this.lowered * 0.45,
-      pose.z + this.recoil * 0.035,
-    );
-    weapon.rotation.set(
-      pose.pitch + this.recoil * 0.09 + reloadMotion * 0.26 + this.lowered * 0.7 - state.punch.pitch * 0.003,
-      pose.yaw + this.swayYaw * 1.4,
-      pose.roll + reloadMotion * 0.3,
-    );
-
+    const grenade = this.weaponId === 'hegrenade' || this.weaponId === 'flashbang' || this.weaponId === 'smokegrenade';
+    weapon.visible = !state.scoped && (!grenade || this.studio !== null);
+    if (this.studio) {
+      // 功能：仅缩小行走引起的前后位移和转角，开火 punch 与原版模型动作独立保留。时间：2026-11-05；作者：lq。
+      const scale = this.studio.scale.x;
+      const weaponBob = this.bob * WEAPON_BOB_SCALE;
+      weapon.position.set(0, 0, -weaponBob * 0.4 * scale);
+      weapon.rotation.set(
+        THREE.MathUtils.degToRad(weaponBob * 0.3 + state.punch.pitch),
+        THREE.MathUtils.degToRad(-weaponBob * 0.5 - state.punch.yaw),
+        THREE.MathUtils.degToRad(-weaponBob),
+      );
+    } else {
+      const pose = REST[this.weaponId ? kindOf(this.weaponId) : 'rifle'];
+      weapon.position.set(pose.x, pose.y - state.deployProgress * 0.45, pose.z);
+      weapon.rotation.set(pose.pitch, pose.yaw, pose.roll);
+    }
     weapon.updateMatrixWorld(true);
   }
+
+  /** 功能：相机和枪械共享原版竖直 bob，返回 GoldSrc 单位供世界镜头使用。时间：2026-11-05；作者：lq。 */
+  get cameraBob(): number { return this.bob; }
 
   /** World-space muzzle position, for the flash and the tracer origin. */
   muzzleWorldPosition(): THREE.Vector3 {
@@ -300,6 +287,7 @@ export class ViewModel {
 
   setAspect(aspect: number): void {
     this.camera.aspect = aspect;
+    this.camera.fov = verticalFovForHorizontal(90, aspect);
     this.camera.updateProjectionMatrix();
   }
 }

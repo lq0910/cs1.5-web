@@ -109,7 +109,8 @@ export function buildStudio(mdl: Mdl, targetHeight?: number, sequenceName?: stri
     const scale = targetHeight ? targetHeight / Math.max(size.y, 1) : 0.015;
     const center = bounds.getCenter(new THREE.Vector3());
     group.scale.setScalar(scale);
-    group.position.set(-center.x * scale, -center.y * scale, -center.z * scale);
+    // 功能：v_ 模型已在原版眼睛坐标建模，禁止包围盒居中裁断手臂根部；人物模型仍居中。时间：2026-11-05；作者：lq。
+    if (targetHeight !== undefined) group.position.set(-center.x * scale, -center.y * scale, -center.z * scale);
   }
   animated.set(group, { mdl, meshes: animatedMeshes, player: targetHeight !== undefined || rawScale !== undefined });
   return group;
@@ -149,6 +150,17 @@ export function studioSequenceFrames(group: THREE.Group, sequenceName: string): 
   const state = animated.get(group);
   if (!state) return 1;
   return findSequence(state.mdl, sequenceName)?.numFrames ?? 1;
+}
+
+/** 功能：精确匹配原版动作名称并读取帧率，避免 Glock 的 shoot 被错误匹配或拔枪跳过。时间：2026-11-05；作者：lq。 */
+export function studioSequence(group: THREE.Group, names: readonly string[]): { label: string; fps: number; numFrames: number; flags: number } | null {
+  const state = animated.get(group);
+  if (!state) return null;
+  for (const name of names) {
+    const sequence = state.mdl.sequences.find((item) => item.label.toLowerCase() === name.toLowerCase());
+    if (sequence) return sequence;
+  }
+  return null;
 }
 
 /** 功能：读取当前人物动作中的右手位置，供第三人称武器逐帧贴合手部。时间：2026-09-29；作者：lq。 */
@@ -264,7 +276,7 @@ export function disposeStudio(group: THREE.Object3D): void {
       child.geometry.dispose();
       const materials = Array.isArray(child.material) ? child.material : [child.material];
       for (const material of materials) {
-        if (material instanceof THREE.MeshLambertMaterial) material.map?.dispose();
+        if (material instanceof THREE.MeshLambertMaterial || material instanceof THREE.MeshBasicMaterial) material.map?.dispose();
         material.dispose();
       }
     }

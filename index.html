@@ -198,21 +198,34 @@
   #buymenu .row { display: flex; gap: 10px; padding: 4px 0; }
   #buymenu .row em { margin-left: auto; color: #e7c77d; font-style: normal; }
   #buymenu kbd { min-width: 18px; padding: 1px 5px; border: 1px solid #a68b4a; background: rgba(90,70,29,.35); color: #f1d184; text-align: center; }
-  #scoreboard { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(660px, 90vw); z-index: 35; display: none; padding: 14px 22px 22px; border: 1px solid rgba(190,180,119,.6); background: rgba(27,31,20,.9); color: #eed99a; font: 15px Tahoma, Arial, sans-serif; box-shadow: 0 10px 30px #0008; }
+  /* 功能：恢复 GoldSrc VGUI 计分板的透明黑底、细边线、紧凑等列与阵营色，取消卡片阴影。时间：2026-11-05；作者：lq。 */
+  #scoreboard { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); box-sizing: border-box; width: min(640px, 94vw); min-height: min(420px, 88vh); max-height: 88vh; overflow: hidden; z-index: 35; display: none; padding: 8px 14px 18px; border: 1px solid rgba(100,100,100,.6); background: rgba(0,0,0,.62); color: #ffb000; font: 13px Tahoma, Arial, sans-serif; }
   #scoreboard.on { display: block; }
-  #scoreboard .scoreboard-head { padding: 4px 0 14px; color: #f5e8bb; font-size: 18px; text-align: center; }
-  #scoreboard .scoreboard-team { display: flex; justify-content: space-between; padding: 5px 8px; margin-top: 8px; font-weight: 700; background: rgba(0,0,0,.32); }
-  #scoreboard table { width: 100%; border-collapse: collapse; }
-  #scoreboard th, #scoreboard td { padding: 5px 8px; border-bottom: 1px solid rgba(222,209,154,.12); text-align: right; }
-  #scoreboard th:first-child, #scoreboard td:first-child { width: 55%; text-align: left; }
+  #scoreboard .scoreboard-head { display: flex; justify-content: space-between; padding: 2px 4px 10px; font-size: 16px; text-align: left; }
+  #scoreboard .scoreboard-head span { font-size: 12px; align-self: center; }
+  #scoreboard table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  #scoreboard col.name { width: 48%; }
+  #scoreboard col.state { width: 15%; }
+  #scoreboard col.number { width: 11%; }
+  #scoreboard col.latency { width: 15%; }
+  #scoreboard th, #scoreboard td { height: 20px; padding: 0 6px; text-align: right; font-weight: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #scoreboard th { border-bottom: 1px solid rgba(255,176,0,.6); height: 22px; }
+  #scoreboard th:first-child, #scoreboard td:first-child { text-align: left; }
+  #scoreboard tbody.t { color: #ff4040; }
+  #scoreboard tbody.ct { color: #99ccff; }
+  #scoreboard .scoreboard-team td { height: 27px; border-bottom: 1px solid currentColor; font-weight: bold; }
+  #scoreboard tr.local { background: rgba(255,176,0,.13); }
+  #scoreboard tr.local td { color: #fff; }
+  #scoreboard .scoreboard-spacer td { height: 17px; }
   #hitmarker { position: fixed; left: 50%; top: 50%; width: 20px; height: 20px; transform: translate(-50%, -50%); z-index: 41; opacity: 0; pointer-events: none; }
   #hitmarker.on { opacity: 1; }
   #hitmarker::before, #hitmarker::after { content: ''; position: absolute; left: 9px; top: 0; width: 2px; height: 20px; background: #fff; box-shadow: 0 0 2px #000; }
   #hitmarker::before { transform: rotate(45deg); }
   #hitmarker::after { transform: rotate(-45deg); }
-  #scope { position: fixed; inset: 0; z-index: 39; display: none; pointer-events: none; background: linear-gradient(to right, transparent calc(50% - 1px), #000 calc(50% - 1px), #000 calc(50% + 1px), transparent calc(50% + 1px)), linear-gradient(to bottom, transparent calc(50% - 1px), #000 calc(50% - 1px), #000 calc(50% + 1px), transparent calc(50% + 1px)); }
+  /* 功能：镜口和原版 SPR 由独立画布绘制，避免 CSS 渐变缩小视野和增加黑雾。时间：2026-11-05；作者：lq。 */
+  #scope { position: fixed; inset: 0; z-index: 39; display: none; pointer-events: none; }
   #scope.on { display: block; }
-  #scope::before { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at 50% 50%, transparent 27%, rgba(0,0,0,.55) 29%, #000 33%); }
+  #scope canvas { display: block; width: 100%; height: 100%; }
   #flashbang, #bombflash { position: fixed; inset: 0; z-index: 42; opacity: 0; pointer-events: none; }
   #flashbang { background: #fff; }
   #bombflash { background: #ffe5b4; }

@@ -9,6 +9,7 @@
 import * as THREE from 'three';
 import type { Vec3 } from '../math.ts';
 import { toThree } from './boxGeometry.ts';
+import { GrenadeEffects } from './explosions.ts';
 import { makeMuzzleTexture } from './muzzle.ts';
 
 const DECAL_POOL = 96;
@@ -101,6 +102,8 @@ interface Tracer {
 }
 
 export class Effects {
+  // 功能：独立烟尘生命周期，防止被墙体命中粒子覆盖。时间：2026-11-05；作者：lq。
+  private readonly grenadeEffects: GrenadeEffects;
   private readonly decals: Decal[] = [];
   private readonly puffs: Puff[] = [];
   private readonly tracers: Tracer[] = [];
@@ -120,6 +123,7 @@ export class Effects {
   private flashIntensity = 2.4;
 
   constructor(scene: THREE.Scene) {
+    this.grenadeEffects = new GrenadeEffects(scene);
     this.decalMaterial = new THREE.MeshBasicMaterial({
       map: makeDecalTexture(),
       transparent: true,
@@ -282,24 +286,8 @@ export class Effects {
 
   /** 功能：高爆弹、烟雾弹引爆时生成对应颜色与持续时间的原版风格粒子。时间：2026-09-29；作者：lq。 */
   addGrenadeBurst(point: Vec3, kind: 'hegrenade' | 'smokegrenade' | 'flashbang'): void {
-    const [x, y, z] = toThree(point.x, point.y, point.z);
-    const smoke = kind === 'smokegrenade';
-    const flash = kind === 'flashbang';
-    for (let i = 0; i < (smoke ? 18 : 14); i++) {
-      const puff = this.puffs[this.puffCursor % PUFF_POOL]!;
-      this.puffCursor++;
-      puff.sprite.position.set(x, y, z);
-      puff.velocity.set((this.rand() - 0.5) * (smoke ? 24 : 180), this.rand() * (smoke ? 22 : 125), (this.rand() - 0.5) * (smoke ? 24 : 180));
-      puff.maxLife = smoke ? 7 : flash ? 0.24 : 0.7;
-      puff.life = puff.maxLife;
-      puff.startSize = smoke ? 20 : flash ? 5 : 7;
-      puff.endSize = smoke ? 100 : flash ? 22 : 34;
-      const material = puff.sprite.material as THREE.SpriteMaterial;
-      material.color.setHex(smoke ? 0x9c9b91 : flash ? 0xffffff : 0xffb657);
-      material.blending = smoke ? THREE.NormalBlending : THREE.AdditiveBlending;
-      material.opacity = smoke ? 0.55 : 0.95;
-      puff.sprite.visible = true;
-    }
+    // 功能：HE 火球与延迟烟尘、闪光白烟、烟雾弹持续喷烟分别处理。时间：2026-11-05；作者：lq。
+    this.grenadeEffects.add(point, kind);
   }
 
   /** 功能：C4 爆炸产生大范围橙色火光、烟尘和短暂点光，匹配原版终局反馈。时间：2026-09-30；作者：lq。 */
@@ -381,6 +369,7 @@ export class Effects {
   }
 
   update(dt: number): void {
+    this.grenadeEffects.update(dt);
     for (const decal of this.decals) {
       if (decal.life <= 0) continue;
       decal.life -= dt;

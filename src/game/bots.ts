@@ -65,6 +65,8 @@ export interface BotCommand {
   state: BotState;
   /** Action the round logic should apply this tick. */
   action: 'none' | 'plant' | 'defuse';
+  /** 功能：BOT 根据移动或交战阶段切换栏位，复现 CS 1.5 跑刀和接敌出枪。时间：2026-11-05；作者：lq。 */
+  switchTo: 1 | 2 | 3 | null;
 }
 
 // 功能：使用 110 度前方视野，近距离仍可察觉身后敌人。时间：2026-10-10；作者：lq。
@@ -176,6 +178,7 @@ export class BotBrain {
       pitch: self.pitch,
       state: this.state,
       action: 'none',
+      switchTo: null,
     };
 
     if (!self.alive) {
@@ -199,7 +202,8 @@ export class BotBrain {
     let bestDistance = Infinity;
 
     for (const enemy of enemies) {
-      const target = v3(enemy.move.origin.x, enemy.move.origin.y, enemy.move.origin.z + 4);
+      // 功能：使用胸口中心做视线检测，避免低矮台阶遮住脚部后 BOT 错过完整目标。时间：2026-11-05；作者：lq。
+      const target = v3(enemy.move.origin.x, enemy.move.origin.y, enemy.move.origin.z + 8);
       const dx = target.x - eye.x;
       const dy = target.y - eye.y;
       const dz = target.z - eye.z;
@@ -293,7 +297,8 @@ export class BotBrain {
       this.aimErrorPitch *= 1 - Math.min(1, dt * 3);
 
       const target = this.target;
-      const chest = v3(target.move.origin.x, target.move.origin.y, target.move.origin.z + 2);
+      // 功能：瞄准原版胸口高度而不是腹部，减少 BOT 对地面压枪的傻站行为。时间：2026-11-05；作者：lq。
+      const chest = v3(target.move.origin.x, target.move.origin.y, target.move.origin.z + 8);
       aimAt(
         v3(chest.x + Math.sin((this.aimErrorYaw * Math.PI) / 180) * 40, chest.y, chest.z + this.aimErrorPitch * 8),
         TURN_RATE_DEG,
@@ -301,6 +306,11 @@ export class BotBrain {
 
       this.state = 'engage';
       command.state = 'engage';
+      // 功能：接敌时优先拔出有弹药的主武器，主武器耗尽后使用副武器，避免 BOT 持刀贴脸。时间：2026-11-05；作者：lq。
+      const primary = self.combat.loadout[1];
+      const secondary = self.combat.loadout[2];
+      command.switchTo = primary.id !== 'knife' && (primary.ammo > 0 || primary.reserve > 0) ? 1
+        : secondary.id !== 'knife' ? 2 : 3;
 
       // Fire when settled and the reaction time has passed.
       const aimError = Math.hypot(this.aimErrorYaw, this.aimErrorPitch);
@@ -354,6 +364,8 @@ export class BotBrain {
     }
 
     if (goalPosition) {
+      // 功能：长距离执行任务时切刀加速，进入交火分支后下一帧自动切回枪械。时间：2026-11-05；作者：lq。
+      if (!this.target && self.combat.loadout[3].id === 'knife') command.switchTo = 3;
       // 功能：目标切换立即重新规划；保持同一路径直至失败，避免每两秒返回身后的网格点。时间：2026-10-09；作者：lq。
       const goalChanged = !this.navigationGoal || Math.hypot(
         goalPosition.x - this.navigationGoal.x, goalPosition.y - this.navigationGoal.y,
