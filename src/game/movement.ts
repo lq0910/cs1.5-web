@@ -64,6 +64,8 @@ export function makeUserCmd(): UserCmd {
 }
 
 export interface MoveState {
+  /** 功能：每个角色独立限制地图弹射冷却，防止落地边缘连续触发；时间：2026-11-17；作者：lq。 */
+  mapLaunchCooldown?: number;
   /** 功能：跳离梯子后短时间禁止重新吸附，保证 Space 可以真正脱离梯面；时间：2026-11-05；作者：lq。 */
   ladderDetachTime: number;
   origin: Vec3;
@@ -115,8 +117,9 @@ export function createMoveState(origin: Vec3, yaw = 0): MoveState {
 }
 
 /** PM_AddGravity */
-function pmAddGravity(state: MoveState, dt: number): void {
-  state.velocity.z -= GRAVITY * dt;
+// 功能：低重力只改变下落加速度，保留原版跳跃冲量和其余地图手感；时间：2026-11-17；作者：lq。
+function pmAddGravity(state: MoveState, dt: number, gravity = GRAVITY): void {
+  state.velocity.z -= gravity * dt;
 }
 
 /** PM_CheckVelocity (NaN guard + sv_maxvelocity clamp). */
@@ -442,7 +445,8 @@ function pmGroundMove(state: MoveState, world: CollisionWorld, cmd: UserCmd, dt:
 function pmAirMove(state: MoveState, world: CollisionWorld, cmd: UserCmd, dt: number): void {
   const { wishdir, wishspeed } = computeWish(state, cmd);
   if (wishspeed > 0) pmAirAccelerate(state, wishdir, wishspeed, AIR_ACCELERATE, dt);
-  pmAddGravity(state, dt);
+  // 功能：玩家与 BOT 共用地图分区重力，室内外切换在每个物理 tick 生效；时间：2026-11-17；作者：lq。
+  pmAddGravity(state, dt, world.gravityAt?.(state.origin) ?? GRAVITY);
   pmStepSlideMove(state, world, dt);
 }
 
@@ -492,6 +496,13 @@ export function pmPlayerMove(
   pmCheckVelocity(state);
   pmCategorizePosition(state, world);
 
+  // 功能：已启动平台只弹射站在地面的角色，玩家与 BOT 共用同一冲量与空中控制；时间：2026-11-17；作者：lq。
+  state.mapLaunchCooldown = Math.max(0, (state.mapLaunchCooldown ?? 0) - dt);
+  const launch = state.onground && !state.mapLaunchCooldown ? world.launchAt?.(state.origin) : null;
+  if (launch) {
+    state.velocity = launch; state.onground = false; state.flags &= ~FL_ONGROUND;
+    state.mapLaunchCooldown = 1.5;
+  }
   if (pmLadderMove(state, world, cmd, dt)) return;
 
   if (state.onground) {

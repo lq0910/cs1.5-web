@@ -47,9 +47,16 @@ import { Hud } from './ui/hud.ts';
 import { bindLocalAssetImporter, installLocalAssetFetch } from './localAssets.ts';
 // 功能：首页显示 GitHub Release 的版本更新摘要。时间：2026-10-30；作者：lq。
 import { loadReleaseNews } from './releaseNews.ts';
+// 功能：接入房主权威快照、局域网输入与地图版本握手；时间：2026-11-17；作者：lq。
+import { applySnapshot, decodeEvents, LAN_PROTOCOL } from './net/protocol.ts';
+import type { PlayerActions, WorldSnapshot } from './net/protocol.ts';
+import { pmPlayerMove } from './game/movement.ts';
+// 功能：绑定客户端内置房间创建、状态显示和关闭操作；时间：2026-11-17；作者：lq。
+import { bindDesktopHostUI } from './net/desktopHost.ts';
 
 installLocalAssetFetch();
 bindLocalAssetImporter();
+bindDesktopHostUI();
 void loadReleaseNews();
 
 function must<T extends HTMLElement>(id: string): T {
@@ -65,6 +72,8 @@ const startButton = must<HTMLButtonElement>('startBtn');
 // 功能：区分首次进入的主菜单与对局中的暂停菜单，避免两个界面叠加。时间：2026-10-01；作者：lq。
 const pauseMenu = must('pause-menu');
 const resumeButton = must<HTMLButtonElement>('resumeBtn');
+// 功能：暂停面板整局重开按钮；时间：2026-11-17；作者：lq。
+const restartButton = must<HTMLButtonElement>('pauseRestartBtn');
 const pauseExitButton = must<HTMLButtonElement>('pauseExitBtn');
 // 功能：暂停面板内的锁定失败提示，只在鼠标锁定异常时显示。时间：2026-10-31；作者：lq。
 const pauseHint = must('pause-hint');
@@ -117,7 +126,8 @@ const map = loaded.map;
 
 // 功能：首页地图卡片高亮真实载入图，素材缺失回退时不误报所选地图；时间：2026-11-05；作者：lq。
 function syncHomeMapChoices(): void {
-  const current = loaded.source === 'bsp' ? map.name.replace('BSP: ', '') : 'white_house';
+  // 功能：原创地图按稳定标识高亮，不再把所有盒子地图误标为白房子；时间：2026-11-17；作者：lq。
+  const current = map.id ?? (loaded.source === 'bsp' ? map.name.replace('BSP: ', '') : 'white_house');
   document.querySelectorAll<HTMLButtonElement>('[data-map-choice]').forEach((button) => {
     const active = button.dataset.mapChoice === current;
     button.setAttribute('aria-pressed', String(active));
@@ -133,13 +143,14 @@ syncHomeMapChoices();
 /** 功能：创建房间时回显实际地图并启用切换，沿用 URL 中的阵营和对局设置；时间：2026-11-05；作者：lq。 */
 function syncMapMenu(): void {
   const label = document.getElementById('current-map-name');
-  const select = document.getElementById('room-map') as HTMLSelectElement | null;
+  const select = (document.getElementById('room-map') ?? document.getElementById('lan-map')) as HTMLSelectElement | null;
   const button = document.getElementById('start-selected-map') as HTMLButtonElement | null;
   // 功能：地图面板显示雪地图规范名称，默认选中实际已载入的沙漠2；时间：2026-11-05；作者：lq。
   if (label) label.textContent = map.name === 'BSP: cs_assault' ? '白房子 / 72街仓库 · cs_assault'
     : map.name === 'BSP: fy_iceworld' ? '雪地 · fy_iceworld' : map.name;
   if (select) {
-    const current = loaded.source === 'bsp' ? map.name.replace('BSP: ', '') : 'white_house';
+    // 功能：地图选择器支持月球基地并回显实际载入的原创地图；时间：2026-11-17；作者：lq。
+    const current = map.id ?? (loaded.source === 'bsp' ? map.name.replace('BSP: ', '') : 'white_house');
     if (Array.from(select.options).some((option) => option.value === current)) select.value = current;
   }
   if (button) button.disabled = false;
@@ -151,9 +162,12 @@ syncMapMenu();
 document.addEventListener('click', (event) => {
   if (!(event.target instanceof Element) || !event.target.closest('#start-selected-map')) return;
   const select = document.getElementById('room-map') as HTMLSelectElement | null;
-  if (!select || !['cs_assault', 'de_dust2', 'fy_iceworld', 'white_house'].includes(select.value)) return;
+  // 功能：允许从创建房间直接进入月球基地；时间：2026-11-17；作者：lq。
+  if (!select || !['cs_assault', 'de_dust2', 'fy_iceworld', 'white_house', 'moonbase'].includes(select.value)) return;
   const url = new URL(window.location.href);
   url.searchParams.set('map', select.value);
+  // 功能：单机地图入口退出联机参数，但原生房间仍由房主显式关闭；时间：2026-11-17；作者：lq。
+  for (const key of ['lan', 'lanhost', 'lanport', 'hostroom']) url.searchParams.delete(key);
   for (const key of ['pos', 'yaw', 'pitch', 'fly', 'probe', 'nolock']) url.searchParams.delete(key);
   window.location.assign(url.href);
 });
@@ -163,7 +177,8 @@ document.addEventListener('click', (event) => {
   if (!(event.target instanceof Element)) return;
   const button = event.target.closest<HTMLButtonElement>('[data-map-choice]');
   const name = button?.dataset.mapChoice;
-  if (!name || !['de_dust2', 'cs_assault', 'fy_iceworld'].includes(name)) return;
+  // 功能：首页新增月球基地直达入口；时间：2026-11-17；作者：lq。
+  if (!name || !['de_dust2', 'cs_assault', 'fy_iceworld', 'moonbase'].includes(name)) return;
   const url = new URL(window.location.href);
   url.searchParams.set('map', name);
   for (const key of ['pos', 'yaw', 'pitch', 'fly', 'probe', 'nolock']) url.searchParams.delete(key);
@@ -171,11 +186,17 @@ document.addEventListener('click', (event) => {
 });
 
 if (loaded.object) renderer.addObject(loaded.object);
-if (map.boxes.length > 0) renderer.addBoxes(map.boxes);
+// 功能：月球建筑使用本地 WAD 材料，其他地图继续使用原渲染路径；时间：2026-11-17；作者：lq。
+if (map.boxes.length > 0) renderer.addBoxes(map.boxes, loaded.materials);
 renderer.setFog(map.fogColor, 1800, 9000);
 
 const gradient = skyGradient(loaded.skyName ?? '');
-if (loaded.skyName) {
+// 功能：月球保持黑色宇宙背景和远处地球，不使用地面地图的蓝天渐变；时间：2026-11-17；作者：lq。
+if (map.id === 'moonbase') {
+  renderer.scene.background = new THREE.Color(map.skyColor);
+  renderer.setFog(map.fogColor, 2600, 12500);
+  renderer.setWorldLighting(1.5);
+} else if (loaded.skyName) {
   const sky = await loadSkybox(loaded.skyName);
   renderer.setSky(sky?.texture ?? null, gradient.top, gradient.horizon);
 } else {
@@ -209,7 +230,8 @@ const audio = new AudioSystem();
 
 // ------------------------------------------------------------ bots and rounds
 const bsp = (map as { bsp?: import('./engine/bsp/types.ts').BspFile }).bsp;
-const sites = bsp ? bombSitesFromBsp(bsp) : [];
+// 功能：原创月球基地的 A/B 包点直接进入现有装包、拆包与 BOT 目标系统；时间：2026-11-17；作者：lq。
+const sites = map.sites ?? (bsp ? bombSitesFromBsp(bsp) : []);
 // 功能：仅在 Dust2 的横幅墙挂屏，其他地图保留自身场景。时间：2026-10-09；作者：lq。
 const ctSpawn = map.spawns.find((spawn) => spawn.team === 'ct');
 const screenWall = bsp && map.name === 'BSP: de_dust2' && ctSpawn ? findNewsScreenWall(bsp, ctSpawn.origin) : null;
@@ -259,7 +281,99 @@ const match = new Match({
   // 功能：每次进入对局都重新打乱双方四套经典人物皮肤。时间：2026-09-29；作者：lq。
   seed: Math.floor(Math.random() * 0xffffffff),
 });
-const playerActor = match.player!;
+let playerActor = match.player!;
+/** 功能：联机输入只发给房主，游戏状态由服务端快照统一下发；时间：2026-11-17；作者：lq。 */
+const lanEnabled = params.get('lan') === '1';
+let lanSocket: WebSocket | null = null;
+let lanConnected = false;
+let lanActorId: number | null = null;
+let lanSequence = 0;
+let lanStatus = '';
+let lanActions: PlayerActions = {};
+let lanEvents: ReturnType<typeof decodeEvents> | null = null;
+let lanSnapshotReceived = false;
+// 功能：跟踪房主整局代数，远端发起重开时同步清理 HUD 和计时状态；时间：2026-11-17；作者：lq。
+let lanGeneration: number | null = null;
+
+/** 功能：通过房主 IP 建立局域网连接，确认同一协议和地图后开始接收权威状态；时间：2026-11-17；作者：lq。 */
+if (lanEnabled) {
+  const host = params.get('lanhost') || window.location.hostname || '127.0.0.1';
+  const port = Math.max(1024, Math.min(65535, Number(params.get('lanport')) || 3001));
+  const socket = new WebSocket(`ws://${host}:${port}`);
+  lanSocket = socket;
+  lanStatus = `正在连接房主 ${host}…`;
+  socket.addEventListener('open', () => socket.send(JSON.stringify({ type: 'hello', protocol: LAN_PROTOCOL,
+    // 功能：未选择地图时局域网握手与房主默认使用原创月球基地；时间：2026-11-17；作者：lq。
+    map: params.get('map') || 'moonbase', fingerprint: map.fingerprint,
+    team: playerTeam, name: params.get('name') || localStorage.getItem('cs15-player-name') || 'Player' })));
+  socket.addEventListener('message', (event) => {
+    let packet: Record<string, unknown>;
+    try { packet = JSON.parse(String(event.data)) as Record<string, unknown>; } catch { return; }
+    if (packet.type === 'error') {
+      lanStatus = String(packet.message ?? '联机握手失败');
+      showMenuToast(lanStatus);
+      socket.close();
+      return;
+    }
+    if (packet.type === 'welcome') {
+      lanActorId = Number(packet.actorId);
+      playerActor.id = lanActorId;
+      lanConnected = true;
+      lanStatus = '已连接房主';
+      showMenuToast(lanStatus);
+      // 功能：客户端开房后直接进入房间，点击继续时由真实手势锁定鼠标；时间：2026-11-17；作者：lq。
+      if (params.get('hostroom') === '1') {
+        setGameState(true, true);
+        setPauseHint('房间已创建并连接。点击「继续游戏」进入对局；队友可用下方房主地址加入。');
+      }
+      return;
+    }
+    if (packet.type !== 'snapshot') return;
+    const snapshot = packet as unknown as WorldSnapshot;
+    const restarted = lanGeneration !== null && snapshot.generation !== lanGeneration;
+    lanGeneration = snapshot.generation;
+    applySnapshot(match, snapshot, map.interactions);
+    const local = match.actors.find((actor) => actor.id === lanActorId);
+    if (local) playerActor = local;
+    simTime = snapshot.now;
+    lanSnapshotReceived = true;
+    if (restarted) {
+      resetRestartPresentation();
+      showMenuToast('游戏已重开，比分已清零');
+    }
+    const decodedEvents = snapshot.events.map((wire) => decodeEvents(wire, match.actors, match.critters));
+    if (decodedEvents.length) {
+      const latest = decodedEvents.at(-1)!;
+      lanEvents = {
+        ...latest,
+        mode: {
+          ...latest.mode,
+          roundStarted: decodedEvents.find((entry) => entry.mode.roundStarted !== null)?.mode.roundStarted ?? null,
+          roundEnded: decodedEvents.find((entry) => entry.mode.roundEnded !== null)?.mode.roundEnded ?? null,
+          bombPlanted: decodedEvents.find((entry) => entry.mode.bombPlanted !== null)?.mode.bombPlanted ?? null,
+          bombDefused: decodedEvents.some((entry) => entry.mode.bombDefused),
+          bombExploded: decodedEvents.some((entry) => entry.mode.bombExploded),
+          killFeed: decodedEvents.flatMap((entry) => entry.mode.killFeed),
+        },
+        shots: [...(lanEvents?.shots ?? []), ...decodedEvents.flatMap((entry) => entry.shots)],
+        critterHits: [...(lanEvents?.critterHits ?? []), ...decodedEvents.flatMap((entry) => entry.critterHits)],
+        grenades: [...(lanEvents?.grenades ?? []), ...decodedEvents.flatMap((entry) => entry.grenades)],
+        grenadeBounces: [...(lanEvents?.grenadeBounces ?? []), ...decodedEvents.flatMap((entry) => entry.grenadeBounces)],
+        reloads: [...(lanEvents?.reloads ?? []), ...decodedEvents.flatMap((entry) => entry.reloads)],
+        noises: [...(lanEvents?.noises ?? []), ...decodedEvents.flatMap((entry) => entry.noises)],
+      };
+    }
+  });
+  socket.addEventListener('close', () => {
+    lanConnected = false;
+    lanSnapshotReceived = false;
+    lanStatus = '与房主的连接已断开';
+    showMenuToast(lanStatus);
+    if (gameStarted && !gamePaused) pauseGame(lanStatus);
+  });
+  socket.addEventListener('error', () => { lanStatus = '无法连接房主，请确认房主已启动局域网服务'; });
+  window.addEventListener('pagehide', () => socket.close(1000, 'page closed'), { once: true });
+}
 // 功能：选队按钮显示当前阵营；切换阵营时保留当前人数并重新建立平衡对局。时间：2026-10-10；作者：lq。
 for (const team of ['ct', 't'] as const) {
   const button = must<HTMLButtonElement>(`team-${team}`);
@@ -385,6 +499,10 @@ function setGameState(started: boolean, paused: boolean): void {
   gamePaused = started && paused;
   overlay.classList.toggle('hidden', started);
   pauseMenu.hidden = !gamePaused;
+  // 功能：联机暂停文案说明其他玩家仍在对局，避免误认为整个房间被冻结；时间：2026-11-17；作者：lq。
+  must('pause-state-description').textContent = lanEnabled
+    ? '已暂停本机操作，局域网对局仍在继续。'
+    : '对局状态已冻结，选择继续即可回到当前回合。';
   document.body.classList.toggle('game-active', started);
   document.body.classList.toggle('game-paused', gamePaused);
 }
@@ -400,6 +518,12 @@ function setPauseHint(text: string | null): void {
 // 功能：暂停时同时释放指针锁定，保证暂停面板能正常点按钮；没有锁定时也照常冻结对局。时间：2026-10-31；作者：lq。
 function pauseGame(hint: string | null = null): void {
   if (!gameStarted) return;
+  // 功能：暂停时立即向房主释放移动/开火按键，避免对局继续沿用最后一帧输入；时间：2026-11-17；作者：lq。
+  if (lanConnected && lanSocket?.readyState === WebSocket.OPEN) {
+    lanSocket.send(JSON.stringify({ type: 'input', seq: ++lanSequence, command: {
+      buttons: 0, forwardmove: 0, sidemove: 0, upmove: 0, yaw: lookYaw, pitch: lookPitch,
+    }, actions: {} }));
+  }
   if (input.locked) document.exitPointerLock();
   setGameState(true, true);
   setPauseHint(hint);
@@ -600,6 +724,25 @@ resumeButton.addEventListener('click', () => {
   acquireMouse();
 });
 
+// 功能：暂停时由本地或局域网权威房间原地重开整局，浏览器和桌面端共用此入口；时间：2026-11-17；作者：lq。
+restartButton.addEventListener('click', () => {
+  lockRequestId++;
+  if (lanEnabled) {
+    if (!lanConnected || lanSocket?.readyState !== WebSocket.OPEN) {
+      setPauseHint('当前未连接房主，无法重开局域网对局。');
+      return;
+    }
+    lanSocket.send(JSON.stringify({ type: 'restart' }));
+    lanSnapshotReceived = false;
+  } else {
+    match.restartNow(simTime);
+    resetRestartPresentation();
+  }
+  setGameState(true, false);
+  setPauseHint(null);
+  acquireMouse();
+});
+
 // 功能：从暂停菜单返回主菜单但保留当前 Match 状态，之后再次开始可继续原回合。时间：2026-10-01；作者：lq。
 pauseExitButton.addEventListener('click', () => {
   lockRequestId++;
@@ -633,11 +776,13 @@ function showMenuToast(message: string): void {
 document.querySelectorAll<HTMLElement>('[data-menu]').forEach((button) => {
   // 快速开始按钮已有独立监听器，避免事件冒泡后再次触发 click 造成递归。
   if (button === startButton) return;
-  button.addEventListener('click', () => {
+  button.addEventListener('click', (event) => {
     const action = button.dataset.menu ?? '';
     // 功能：创建房间已有地图选择弹窗，不再叠加原来的房间就绪提示；时间：2026-11-05；作者：lq。
     if (action === 'create') return;
     if (action === 'play') {
+      // 功能：顶部开始游戏不再跳转到空锚点，避免额外导航影响鼠标锁定；时间：2026-11-17；作者：lq。
+      event.preventDefault();
       startButton.click();
       return;
     }
@@ -722,6 +867,42 @@ let lastDefuseProgress = 0;
 let bombFlashUntil = 0;
 let bombFlashStrength = 0;
 
+/** 功能：本地重开和房主重开共用显示层复位，清除旧击杀、输入、观战和特效；时间：2026-11-17；作者：lq。 */
+function resetRestartPresentation(): void {
+  accumulator = 0;
+  hudAccum = 1;
+  roundBanner = null;
+  killFeed = [];
+  localKills = localDeaths = 0;
+  radioLine = '';
+  radioUntil = 0;
+  lastRadioAt = -99;
+  nextTeamCallAt = simTime + 10;
+  reloadSoundCues = [];
+  lastDefuseProgress = lastPlantProgress = 0;
+  nextBombBeepAt = simTime;
+  hitUntil = flashUntil = bombFlashUntil = bombFlashStrength = 0;
+  spectator = null;
+  pendingBuy = pendingSlot = pendingGrenade = pendingAmmo = null;
+  pendingDrop = pendingPickup = pendingSpray = pendingBomb = false;
+  buyMenuOpen = false;
+  buyCategory = null;
+  previousEquipment = 2;
+  lanActions = {};
+  lanEvents = null;
+  lookYaw = playerActor.yaw;
+  lookPitch = playerActor.pitch;
+  input.reset();
+  footstepCadence.update(simTime, false, 0, true, false);
+  effects.reset();
+  sprayRenderer.reset();
+  viewModel.reset();
+  grenadeRenderer.update([]);
+  droppedWeaponRenderer.update([]);
+  hitMarker.classList.remove('on');
+  flashbangOverlay.style.opacity = bombFlashOverlay.style.opacity = '0';
+}
+
 /** 功能：按原版无线电节奏播放队员语音并在 HUD 短暂显示发话者。时间：2026-09-29；作者：lq。 */
 function playRadio(name: string, speaker: string, subtitle: string, minimumGap = 3): void {
   if (simTime - lastRadioAt < minimumGap) return;
@@ -753,7 +934,7 @@ function frame(now: number): void {
   lastTime = now;
   const dt = Math.min(rawDt, 0.25);
   // 功能：暂停或主菜单阶段不推进固定步长，确保 Esc 后回合计时、BOT 和物理全部冻结。时间：2026-10-01；作者：lq。
-  const simulationActive = gameStarted && !gamePaused;
+  const simulationActive = gameStarted && !gamePaused && (!lanEnabled || lanSnapshotReceived);
 
   fpsAccum += rawDt;
   frames++;
@@ -774,6 +955,17 @@ function frame(now: number): void {
   if (simulationActive) accumulator += dt;
   let steps = 0;
   while (simulationActive && accumulator >= TICK_INTERVAL && steps < 8) {
+    if (lanConnected) {
+      if (pendingBuy) lanActions.buy = pendingBuy;
+      if (pendingAmmo !== null) lanActions.ammo = pendingAmmo;
+      if (pendingGrenade) lanActions.grenade = pendingGrenade;
+      if (pendingBomb) lanActions.bomb = true;
+      if (pendingSlot !== null) lanActions.slot = pendingSlot;
+      if (pendingDrop) lanActions.drop = true;
+      if (pendingPickup) lanActions.pickup = true;
+      pendingBuy = null; pendingAmmo = null; pendingGrenade = null;
+      pendingBomb = false; pendingSlot = null; pendingDrop = false; pendingPickup = false;
+    } else {
     if (pendingBuy) {
       // 功能：购买成功后装备新枪或手雷并关闭菜单，使数字键购买有即时反馈。时间：2026-09-29；作者：lq。
       const item = BUY_MENU.find((entry) => entry.id === pendingBuy);
@@ -846,20 +1038,39 @@ function frame(now: number): void {
       }
       pendingPickup = false;
     }
+    }
 
     input.sampleCommand(playerCmd);
     playerActor.yaw = lookYaw;
     playerActor.pitch = lookPitch;
 
     simTime += TICK_INTERVAL;
-    const events = match.update(simTime, {
+    const command = {
       buttons: playerCmd.buttons,
       forwardmove: playerCmd.forwardmove,
       sidemove: playerCmd.sidemove,
       upmove: 0,
       yaw: lookYaw,
       pitch: lookPitch,
-    });
+    };
+    let events: ReturnType<typeof match.update>;
+    if (lanConnected && lanSocket?.readyState === WebSocket.OPEN) {
+      // 功能：房主每个输入包只接收受限的当前指令和一次性操作，客户端预测本地移动；时间：2026-11-17；作者：lq。
+      pmPlayerMove(playerActor.move, map.collision, { ...playerCmd, yaw: lookYaw, pitch: lookPitch }, TICK_INTERVAL);
+      if (lanSequence++ % 2 === 0 || Object.keys(lanActions).length) {
+        lanSocket.send(JSON.stringify({ type: 'input', seq: lanSequence, command, actions: lanActions }));
+        lanActions = {};
+      }
+      events = lanEvents ?? {
+        mode: { roundStarted: null, roundEnded: null, killFeed: [], bombPlanted: null, bombDefused: false,
+          bombExploded: false, moneyAwards: [] },
+        shots: [], critterHits: [], noises: [], grenades: [], grenadeBounces: [], reloads: [],
+      };
+      lanEvents = null;
+    } else {
+      simTime += TICK_INTERVAL;
+      events = match.update(simTime, command);
+    }
     // 功能：喷漆成功才添加贴花和空间音效，失败请求不消耗冷却时间。时间：2026-09-30；作者：lq。
     if (pendingSpray) {
       const spray = sprayRenderer.ready && input.locked && !buyMenuOpen ? match.trySpray(simTime) : null;
@@ -985,8 +1196,17 @@ function frame(now: number): void {
           hitUntil = simTime + 0.18;
           hitMarker.classList.add('on');
         }
-      } else if (resolved.shot.hit) {
+      } else if (resolved.shot.hit && !resolved.shot.segments) {
         effects.addImpact(resolved.shot.end, resolved.shot.normal);
+      }
+
+      // 功能：穿墙命中人物时仍显示前方墙面弹孔；只显示目标之前已到达的撞击面，联机复用同一事件；时间：2026-11-17；作者：lq。
+      for (const segment of resolved.shot.segments ?? []) {
+        const distance = segment.startDistance + Math.hypot(segment.end.x - segment.start.x,
+          segment.end.y - segment.start.y, segment.end.z - segment.start.z);
+        if (segment.hit && (resolved.shot.hit || distance < resolved.shot.distance)) {
+          effects.addImpact(segment.end, segment.normal);
+        }
       }
 
       if (resolved.victim) {
@@ -1145,6 +1365,8 @@ function frame(now: number): void {
   // 功能：C4 爆炸闪光在 0.38 秒内快速淡出，不遮挡下一回合。时间：2026-09-30；作者：lq。
   bombFlashOverlay.style.opacity = String(Math.max(0, (bombFlashUntil - simTime) / 0.38) * bombFlashStrength);
   effects.update(simulationActive ? dt : 0);
+  // 功能：基地环境动画跟随对局模拟时间，Esc 暂停后不继续转动；时间：2026-11-17；作者：lq。
+  loaded.updateVisuals?.(simTime);
   // 功能：资讯屏独立使用真实时间，暂停对局后仍可阅读和刷新新闻。时间：2026-10-09；作者：lq。
   newsScreen?.update(performance.now() / 1000, renderer.camera);
   // 功能：玩家看见附近大屏时才加载有声直播，暂停、遮挡和离开视野立即停止。时间：2026-10-21；作者：lq。

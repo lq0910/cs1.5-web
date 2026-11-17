@@ -198,6 +198,16 @@ export class ViewModel {
     }
   }
 
+  /** 功能：整局重开时恢复持枪动画与步伐状态，无需重新加载模型；时间：2026-11-17；作者：lq。 */
+  reset(): void {
+    this.actionKind = 'draw';
+    this.actionSequence = '';
+    this.actionElapsed = this.idleElapsed = 0;
+    this.bobPhase = this.bob = this.bobSpeed = 0;
+    this.flashTimer = this.shotNumber = 0;
+    this.muzzleFlash.visible = false;
+  }
+
   /** 功能：阵亡观战时隐藏本地第一人称手臂和枪械。时间：2026-09-29；作者：lq。 */
   setVisible(visible: boolean): void {
     this.root.visible = visible;

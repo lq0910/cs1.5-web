@@ -31,13 +31,15 @@ export interface Plane {
 
 export interface Brush {
   planes: Plane[];
+  /** 功能：碰撞刷子保留材质，支持木门、薄墙与金属不同的穿透阻力；时间：2026-11-17；作者：lq。 */
+  material?: string;
 }
 
 /** Axis-aligned box description used by hand-authored maps and the BSP importer. */
 export interface BoxDef {
   mins: Vec3;
   maxs: Vec3;
-  /** Texture/material name, used by the renderer only. */
+  /** 功能：贴图名称同时用于显示和子弹材质判定；时间：2026-11-17；作者：lq。 */
   material?: string;
   /** Non-solid boxes are drawn but do not collide (e.g. decorative trim). */
   solid?: boolean;
@@ -223,7 +225,8 @@ export class BrushWorld implements CollisionWorld {
     const solids: SolidBrush[] = [];
     for (const box of boxes) {
       if (box.solid === false) continue;
-      solids.push(aabbOfBrush(brushFromAABB(box.mins, box.maxs)));
+      // 功能：构造碰撞时保留原始箱体材质；时间：2026-11-17；作者：lq。
+      solids.push(aabbOfBrush({ ...brushFromAABB(box.mins, box.maxs), material: box.material }));
     }
     return new BrushWorld(solids);
   }
@@ -264,6 +267,8 @@ export class BrushWorld implements CollisionWorld {
         result.dist = hit.dist;
         result.startsolid = true;
         result.allsolid = hit.allsolid;
+        // 功能：起点在实体内时也保留该实体材质；时间：2026-11-17；作者：lq。
+        result.material = brush.material;
         return result;
       }
 
@@ -271,6 +276,8 @@ export class BrushWorld implements CollisionWorld {
         bestFraction = hit.fraction;
         bestNormal = hit.normal;
         bestDist = hit.dist;
+        // 功能：材质始终对应最近的命中面；时间：2026-11-17；作者：lq。
+        result.material = brush.material;
       }
     }
 

@@ -11,6 +11,8 @@ import * as THREE from 'three';
 import type { Vec3 } from '../math.ts';
 import type { BoxDef } from '../collision/brush.ts';
 import { getMaterial } from './textures.ts';
+// 功能：原创地图可使用从本机 WAD 读取的专属材质，不改写其他地图的缓存；时间：2026-11-17；作者：lq。
+import type { MaterialEntry } from './textures.ts';
 import { createSkyTexture } from './textures.ts';
 import { makeGeometryArrays, toThree, verticalFovForHorizontal, writeBoxGeometry } from './boxGeometry.ts';
 
@@ -72,7 +74,7 @@ export class WorldRenderer {
   }
 
   /** Builds and adds the render geometry for a list of boxes, merged per material. */
-  addBoxes(boxes: BoxDef[]): void {
+  addBoxes(boxes: BoxDef[], materials?: Map<string, MaterialEntry>): void {
     const byMaterial = new Map<string, BoxDef[]>();
     for (const b of boxes) {
       const name = b.material ?? 'concrete';
@@ -82,7 +84,7 @@ export class WorldRenderer {
     }
 
     for (const [name, list] of byMaterial) {
-      const { material, tileUnits } = getMaterial(name);
+      const { material, tileUnits } = materials?.get(name) ?? getMaterial(name);
       const arrays = makeGeometryArrays();
       writeBoxGeometry(list, tileUnits, arrays);
 

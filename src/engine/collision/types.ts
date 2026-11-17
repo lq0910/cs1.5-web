@@ -19,6 +19,8 @@ export interface Hull {
 }
 
 export interface TraceResult {
+  /** 功能：保留命中材质供子弹判断穿透能力；时间：2026-11-17；作者：lq。 */
+  material?: string;
   /** Fraction of the requested movement that was possible, 0..1. */
   fraction: number;
   /** Final position (start + (end-start) * fraction). */
@@ -45,6 +47,12 @@ export function makeTrace(): TraceResult {
 }
 
 export interface CollisionWorld {
+  /** 功能：按命中点和法线查询 BSP 表面贴图，仅子弹穿透时调用；时间：2026-11-17；作者：lq。 */
+  surfaceMaterial?(point: Vec3, normal: Vec3): string | undefined;
+  /** 功能：原创地图可按空间区域指定重力，未提供时沿用原版 800；时间：2026-11-17；作者：lq。 */
+  gravityAt?(origin: Vec3): number;
+  /** 功能：原创弹射平台可提供一次角色移动冲量，未提供时保留原版移动；时间：2026-11-17；作者：lq。 */
+  launchAt?(origin: Vec3): Vec3 | null;
   /** Sweeps `hull` along the segment start->end and reports the first impact. */
   traceHull(hull: Hull, start: Vec3, end: Vec3): TraceResult;
   /** GoldSrc contents value at a point: 0 = empty, CONTENTS_SOLID = -2. */

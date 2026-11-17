@@ -27,6 +27,11 @@ export interface MapBounds {
 }
 
 export interface MapData {
+  /** 功能：原创地图使用稳定标识和手工包点，菜单与模拟不必依赖 BSP 实体；时间：2026-11-17；作者：lq。 */
+  id?: string;
+  sites?: import('../objectives.ts').ObjectiveArea[];
+  /** 功能：联机比较实际 BSP 字节版本，拒绝静默回退地图；时间：2026-11-17；作者：lq。 */
+  fingerprint?: string;
   /** 功能：地图实体交互由共享对局驱动，浏览器与无头测试使用相同状态；时间：2026-11-05；作者：lq。 */
   interactions?: MapInteractions;
   name: string;

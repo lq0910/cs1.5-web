@@ -368,6 +368,17 @@ export class Effects {
     void direction;
   }
 
+  /** 功能：重开时回收临时战斗效果，避免上一局烟雾、弹孔和闪光延续；时间：2026-11-17；作者：lq。 */
+  reset(): void {
+    this.grenadeEffects.reset();
+    for (const entry of [...this.decals, ...this.tracers]) { entry.life = 0; entry.mesh.visible = false; }
+    for (const puff of this.puffs) { puff.life = 0; puff.sprite.visible = false; }
+    this.decalCursor = this.puffCursor = this.tracerCursor = 0;
+    this.flashLife = 0;
+    this.flash.visible = false;
+    this.flashLight.intensity = 0;
+  }
+
   update(dt: number): void {
     this.grenadeEffects.update(dt);
     for (const decal of this.decals) {

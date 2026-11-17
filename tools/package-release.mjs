@@ -28,7 +28,8 @@ for (const relative of ['maps/white_house.bsp', 'white_house.wad']) {
   const source = join(dist, 'cstrike', relative);
   try { await cp(source, join(bundledMap, relative)); } catch { /* CI may regenerate it below. */ }
 }
-await writeFile(join(staging, 'README.txt'), 'CS 1.5 Web\n\n解压后使用任意静态 HTTP 服务器打开 index.html。\n发布包只包含项目自制 white_house 测试地图，不包含原版 CS 地图、模型、贴图或音频。\n');
+// 功能：发布包保留月球基地随图目录，准确说明八张原版贴图的来源与许可归属；时间：2026-11-17；作者：lq。
+await writeFile(join(staging, 'README.txt'), 'CS 1.5 Web\n\n解压后使用任意静态 HTTP 服务器打开 index.html。\n内置月球基地（?map=moonbase）及 white_house 测试地图。\n月球基地包含 8 张来自本机原版地图的贴图，来源见 moonbase/materials.json；原贴图权利仍归各自权利人，公开分发须确认素材许可。\n其余完整原版 CS 地图、模型或音频未包含在此 ZIP 中。\n');
 await mkdir(out, { recursive: true });
 const archive = join(out, `${name}.zip`);
 await rm(archive, { force: true });

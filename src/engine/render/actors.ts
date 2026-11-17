@@ -61,6 +61,9 @@ interface ActorView {
   /** 功能：记录腿部动作的步态进度和上次位置，按实际移动距离推进动画。时间：2026-09-30；作者：lq。 */
   stridePhase: number;
   lastOrigin: Vec3;
+  /** 功能：保存远端角色的渲染位置，低频网络快照间平滑插值；时间：2026-11-17；作者：lq。 */
+  renderOrigin: Vec3;
+  renderAt: number;
 }
 
 export class ActorRenderer {
@@ -106,6 +109,7 @@ export class ActorRenderer {
       group, body, actor, studio: null, weapon: null, weaponId: '', weaponGeneration: 0,
       lastSequence: '', lastFrame: -1, lastPitch: NaN,
       stridePhase: 0, lastOrigin: { ...actor.move.origin },
+      renderOrigin: { ...actor.move.origin }, renderAt: 0,
     };
     this.scene.add(group);
     // 功能：从本地原版 CS 角色模型替换临时方块，按阵营选择皮肤。时间：2026-09-29；作者：lq。
@@ -172,7 +176,16 @@ export class ActorRenderer {
         this.views.set(actor.id, view);
       }
 
-      const [x, y, z] = toThree(actor.move.origin.x, actor.move.origin.y, actor.move.origin.z);
+      // 功能：20Hz 左右的局域网快照以指数插值显示，长时间卡顿或复活传送则立即对齐权威位置；时间：2026-11-17；作者：lq。
+      const elapsed = view.renderAt > 0 ? Math.max(0, now - view.renderAt) : 0;
+      const displacement = Math.hypot(actor.move.origin.x - view.renderOrigin.x,
+        actor.move.origin.y - view.renderOrigin.y, actor.move.origin.z - view.renderOrigin.z);
+      const blend = displacement > 200 || elapsed > 0.3 ? 1 : 1 - Math.exp(-elapsed * 18);
+      view.renderOrigin.x += (actor.move.origin.x - view.renderOrigin.x) * blend;
+      view.renderOrigin.y += (actor.move.origin.y - view.renderOrigin.y) * blend;
+      view.renderOrigin.z += (actor.move.origin.z - view.renderOrigin.z) * blend;
+      view.renderAt = now;
+      const [x, y, z] = toThree(view.renderOrigin.x, view.renderOrigin.y, view.renderOrigin.z);
       // 功能：用水平位移驱动原版腿部序列；出生传送或复活时重置，避免动作突然跳帧。时间：2026-09-30；作者：lq。
       const distanceMoved = Math.hypot(actor.move.origin.x - view.lastOrigin.x, actor.move.origin.y - view.lastOrigin.y);
       view.lastOrigin = { ...actor.move.origin };

@@ -70,6 +70,12 @@ export class SprayRenderer {
     return this.material.map !== null;
   }
 
+  /** 功能：整局重开时隐藏旧喷漆并复用贴花池；时间：2026-11-17；作者：lq。 */
+  reset(): void {
+    this.cursor = 0;
+    for (const mesh of this.meshes) mesh.visible = false;
+  }
+
   /** 功能：墙面喷漆保持竖直，地面喷漆跟随玩家朝向，略微偏离表面避免闪烁。时间：2026-09-30；作者：lq。 */
   addSpray(event: SprayEvent): void {
     if (!this.ready) return;

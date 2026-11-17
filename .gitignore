@@ -1,5 +1,8 @@
 node_modules/
 dist/
+# 功能：房间服务与平台运行时由桌面构建自动生成，不提交二进制；时间：2026-11-17；作者：lq。
+src-tauri/resources/lan-host/
+src-tauri/target/
 release/
 *.log
 .DS_Store

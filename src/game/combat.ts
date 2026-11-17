@@ -25,6 +25,8 @@ import {
 } from './weapons.ts';
 import type { PunchAngle } from './weapons.ts';
 import { IN_ATTACK, IN_ATTACK2, IN_RELOAD } from './constants.ts';
+// 功能：枪械共享按材质和厚度衰减的多段穿墙弹道；时间：2026-11-17；作者：lq。
+import { traceBullet, type BulletSegment } from './penetration.ts';
 
 /** GoldSrc bullets are traced with a point hull. */
 export const POINT_HULL: Hull = { mins: v3(0, 0, 0), maxs: v3(0, 0, 0) };
@@ -57,6 +59,8 @@ export interface ShooterState {
 }
 
 export interface ShotEvent {
+  /** 功能：携带穿墙前后有效弹道与剩余伤害，兼容旧事件和联机快照；时间：2026-11-17；作者：lq。 */
+  segments?: BulletSegment[];
   weapon: WeaponId;
   /** 功能：标识刀的右键重刺，供第一人称播放 stab 而不是 slash 动作。时间：2026-09-29；作者：lq。 */
   alternate: boolean;
@@ -196,6 +200,13 @@ export class CombatSystem {
       3: makeWeaponRuntime(loadout[3]),
     };
     this.random = mulberry32(seed);
+  }
+
+  /** 功能：接收权威武器快照，不触发本地切枪冷却或重新抽取散布；时间：2026-11-17；作者：lq。 */
+  applyNetworkState(slot: WeaponSlot, loadout: Record<WeaponSlot, WeaponRuntime>, punch: PunchAngle): void {
+    this.slot = slot;
+    for (const index of [1, 2, 3] as const) this.loadout[index] = { ...loadout[index] };
+    this.punch = { ...punch };
   }
 
   get activeSlot(): WeaponSlot {
@@ -378,9 +389,11 @@ export class CombatSystem {
       shooter.eye.z + direction.z * range,
     );
 
-    const trace = world.traceHull(POINT_HULL, shooter.eye, end);
-    const hit = trace.fraction < 1;
-    const hitPoint = copy(trace.endpos);
+    // 功能：首个命中面继续用于原有反馈，后续弹道交给对局判定墙后目标；时间：2026-11-17；作者：lq。
+    const segments = traceBullet(world, weapon, shooter.eye, end);
+    const trace = segments[0]!;
+    const hit = trace.hit;
+    const hitPoint = copy(trace.end);
     const distance = Math.hypot(
       hitPoint.x - shooter.eye.x,
       hitPoint.y - shooter.eye.y,
@@ -390,6 +403,8 @@ export class CombatSystem {
     const baseDamage = alternate && weapon.kind === 'knife' ? 65 : weapon.damage;
 
     events.shots.push({
+      // 功能：刀击保留单段短距离判定，枪械传递完整穿墙弹道；时间：2026-11-17；作者：lq。
+      segments: weapon.kind === 'knife' ? undefined : segments,
       weapon: weapon.id,
       alternate,
       start: copy(shooter.eye),

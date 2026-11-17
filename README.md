@@ -2,13 +2,13 @@
 
 浏览器里运行的 CS 1.5 风格单机 FPS：GoldSrc 风格移动、BSP/WAD 地图加载、武器和手雷、可配置人数的 BOT 回合制、C4 安装与拆除，以及可按开关随机出现的地图小鸡。
 
-本项目仅供个人学习研究、自玩娱乐使用，不作商业用途。Counter-Strike 名称及原版地图、模型、音效等素材的权利归各自权利人所有。本仓库不包含原版游戏素材，也不提供原版安装包；请自行确认素材来源和使用许可。
+本项目仅供个人学习研究、自玩娱乐使用，不作商业用途。Counter-Strike 名称及原版地图、模型、音效等素材的权利归各自权利人所有。月球基地当前默认携带 8 张选用的原版贴图，来源见 `public/moonbase/materials.json`；仓库不提供完整原版安装包。原创布局不改变原素材版权，公开分发须确认素材许可，详见 [LEGAL-NOTICE.md](LEGAL-NOTICE.md)。
 
 玩家交流群：QQ群 **1130466174**，用于玩法交流、本地素材导入答疑和版本反馈。
 
 ![QQ群 1130466174 交流群二维码](public/support/qq-group.jpg)
 
-当前支持选择 CT/T 阵营。默认加载 `de_dust2`（沙漠2），也可通过首页地图卡片选择 Assault、Iceworld、Dust2 和内置测试图；没有对应原版素材时会回退到可用地图。默认 5V5，设置中可分别调整 CT/T 人数（每队 1–6 人，含玩家）；玩家与 BOT 共用回合、武器和 C4 规则。项目另有一张自制的 `white_house` 双层房屋移动测试地图，两者不是同一张图。
+当前默认加载原创月球基地，也可从首页切换至 `de_dust2`（沙漠2）、Assault、Iceworld。月球基地不依赖外部地图素材；原版地图未导入时回退到月球基地。默认 5V5，设置可分别调整 CT/T 人数（每队 1–6 人，含玩家）；玩家与 BOT 共用回合、武器和 C4 规则。旧 `white_house` 移动测试图仍可从创建房间选择。
 
 ---
 
@@ -21,7 +21,26 @@ pnpm make-bsp         # 把内置 white_house 移动测试地图编译成 BSP + 
 pnpm dev              # 打开终端显示的本地地址
 ```
 
-仓库不附带原版素材。要加载原版地图、模型与音效，请先将你合法持有的 CS 1.5 安装文件放在本机，再按下文“原版地图”一节运行提取工具。未准备原版素材时，可运行 `pnpm make-bsp` 后用 `?map=white_house` 体验内置移动测试地图。
+### 客户端局域网对战
+
+桌面客户端首页点击「创建房间」（快速开始下方），选择地图、阵营、人数、难度和端口，点击「创建并进入」。客户端内置房间服务及运行时，无需安装 Node 或输入命令。房间就绪后点击「继续游戏」进入；暂停菜单显示队友加入用的 IP:端口，并提供「关闭房间并返回首页」。返回主菜单、刷新页面不会关闭房间，退出客户端或主动关闭房间才会停止服务并释放端口。端口被占用、素材缺失会直接在建房表单提示。
+
+队友在自己的客户端打开顶部「局域网」，输入房主显示的 IP:端口，选择相同地图、阵营并加入。房间服务不额外提供网页服务器；若队友使用浏览器，请自行打开相同版本的网页，输入房主地址加入。双方需在同一局域网，允许所选游戏 TCP 端口（默认 3001）。
+
+#### 开发时使用命令行房主
+
+开发者也可在两个终端分别启动网页和权威房间服务，地图名可替换为 `moonbase`、`white_house` 或已准备的 BSP 地图（如果 Vite 使用其他端口，也传入对应的 `--web-port`）：
+
+```bash
+pnpm dev
+pnpm lan:host -- --map moonbase --web-port 5173
+```
+
+房主终端会列出局域网网页地址。其他电脑打开该地址，在“局域网服务器”中输入房主 IP、选择地图和阵营后加入。原创月球基地和 white_house 无需额外素材；原版地图要求房主和加入者都载入相同 BSP，房主还需在 `public/cstrike/maps/<地图名>.bsp` 有对应文件。局域网需允许网页端口（默认 5173）和游戏 TCP 端口（默认 3001）；自定义游戏端口时，加入表单地址填写 `IP:端口`。
+
+目前每队最多 6 人，真人接管 BOT 席位；统一服务端负责移动、命中、购买、回合、C4、手雷和动态门判定。该版本按 IP 直连，尚无自动房间发现或互联网穿透。自定义房间端口时，在加入表单的房主地址中填写 `IP:端口`。
+
+用 `?map=moonbase` 可直接进入月球基地，随图材质无需额外导入。原版完整地图、人物、武器模型和音效仍需从本机合法持有的 CS 1.5 安装文件提取。月球基地精简贴图包可用 `node tools/package-moonbase-assets.mjs` 从已有本地 WAD 重建；缺失贴图时也可使用程序材质继续游戏。
 
 > **Node 版本注意**：用 nvm 装的 Node（v18 以上，推荐 v20/v22）即可。
 > 若 `pnpm dev` 报 `Cannot find module ...rolldown-binding...node`，说明该 Node 开了
@@ -43,13 +62,13 @@ pnpm dev              # 打开终端显示的本地地址
 
 ## 构建与 GitHub Release
 
-本项目提供免费下载的静态发布包和 Tauri 桌面安装包。执行 `pnpm package:release` 会先构建，再生成不含 `public/cstrike/` 原版素材的 `release/cs15-web-snapshot.zip`。仓库中的 `.github/workflows/release.yml` 会在推送 `v1.0.0` 这类标签时自动构建 Windows 安装包、Intel/Apple Silicon 两种 macOS DMG 和网页 ZIP，并创建 GitHub Release。Intel 构建使用 GitHub 当前支持的 `macos-15-intel` runner，Apple Silicon 构建使用 `macos-latest`。桌面壳的本地构建需要 Rust，并通过 `pnpm dlx` 获取 Tauri CLI：
+本项目提供免费下载的静态发布包和 Tauri 桌面安装包。执行 `pnpm package:release` 会先构建，再生成不含 `public/cstrike/` 原版素材的 `release/cs15-web-snapshot.zip`。仓库中的 `.github/workflows/release.yml` 会在推送 `v1.0.0` 这类标签时自动构建 Windows 安装包、Intel/Apple Silicon 两种 macOS DMG 和网页 ZIP，并创建 GitHub Release。Intel 构建使用 GitHub 当前支持的 `macos-15-intel` runner，Apple Silicon 构建使用 `macos-latest`。桌面壳的本地构建需要 Rust，并通过 `pnpm dlx` 获取 Tauri CLI。Tauri 构建前会自动执行 `pnpm desktop:prepare`，将房间服务打为独立模块，并复制当前平台 Node 可执行文件和许可证到安装包资源。Windows、Intel macOS、Apple Silicon macOS 在各自平台的 CI runner 上原生构建，安装者无需安装 Node。原版地图使用客户端已导入素材的 BSP，保存至应用私有目录后交给房间服务，不依赖开发机的 `public` 目录。只构建网页时不会带入 Node 运行时。
 
 ```bash
 pnpm package:release
 pnpm tauri:build
-git tag v0.1.2
-git push origin v0.1.2
+git tag v0.1.3
+git push origin v0.1.3
 ```
 
 ### macOS 发布与“应用已损坏”
@@ -80,7 +99,7 @@ macOS 的 WKWebView 默认拒绝网页的 Pointer Lock：只有 WKUIDelegate 实
 
 主界面的赞赏码和公众号二维码应使用发布者自己的图片，放到 `public/support/` 后再构建。广告可以作为独立、可关闭的展示位接入，但应使用合法广告平台、明确标识广告内容，并避免影响游戏操作；当前仓库没有接入广告 SDK。
 
-桌面安装包和网页 ZIP 都不包含从原版 CS 安装目录提取的地图、模型、贴图和音频，发布包只内置项目自制的 `white_house` 测试地图。若要加载原版素材，用户应自行从自己合法持有的安装中提取，并确认许可后放入本地资源目录。Tauri 壳只能封装资源，不能改变第三方素材的授权状态。
+桌面安装包和网页 ZIP 内置原创月球基地、其精简贴图包及 `white_house` 测试图；其余完整原版 CS 地图、模型和音频不会打入发布 ZIP。月球基地的 8 张原版贴图仍受原许可约束，公开发布前应核实许可或移除精简包以使用程序回退材质。Tauri 封装不改变第三方素材的授权状态。
 
 进入主菜单后点击“导入本地素材”，选择本机合法持有的 `cstrike` 素材目录。也可以先把素材放入项目的 `public/cstrike/`，运行 `pnpm package:assets` 生成素材包，再在首页点击“直接选择 ZIP 素材包”导入。地图可直接通过首页右侧地图卡片切换。文件会保存在当前浏览器或 Tauri 应用的本地 IndexedDB 中，仅用于本机加载，不会上传到服务器；导入完成后应用会自动刷新。QQ群二维码用于玩家交流和导入问题答疑，不提供未经授权的第三方素材下载。
 
@@ -224,6 +243,14 @@ GoldSrc 的面绕序与 OpenGL/three.js 期望的**相反**：按平面法线校
 第一人称保留 `v_*.mdl` 的原始视点、比例和帧率，使用水平 90° 投影。切枪播放 draw/deploy，击发保留完整动作，走路采用 Valve SDK 的 `V_CalcBob`。Tab 为透明黑底、红蓝阵营的经典单表布局。详细参考、验证与差异见 [2026-11-05 还原记录](docs/classic-fidelity-20261105.md)。
 
 爆炸效果优先读取用户本地 `cstrike/sprites/fexplo.spr`、`eexplo.spr`、`steam1.spr`，不随发布包分发。缺少文件时使用程序生成回退；当前本地素材没有这三个精灵，因此尚未验证原版精灵逐帧画面。
+
+## 原创月球基地
+
+首页点击“月球基地 · 原创”，或打开 `http://127.0.0.1:5173/?map=moonbase`。地图提供 A 反应堆实验室、B 登月坪两个包点，以及外圈、中央桥下和上层观测桥的回环路线，支持最高 6V6。
+
+室外重力为 300，保留原版跳跃冲量，实际跳高约 118 单位；实验室和出生舱内恢复原版 800 重力。手雷也随所在区域改变下落加速度。观测桥两端楼梯供 BOT 通行，玩家可以利用低重力跳上 64 单位货箱，再跳上高台。实验室西侧 44 单位维护道需要按 Ctrl/C 蹲行，可从侧后方切入。冷蓝灯带指向 A，琥珀灯带指向 B。
+
+地球、星空、太阳能板、通信天线、反应堆灯环和中英指示牌为程序构建；建筑贴图选自 Dust2、Assault、747、Office、Aztec。默认随图包只包含使用的 8 张贴图（约 93 KB），不需要完整的 `cstrike` 素材目录。导航、出生碰撞、双区跳跃、蹲行通道、随图材质及 6V6 回合由 `tests/moonbase.test.ts` 验证。
 
 ## 内置移动测试地图
 

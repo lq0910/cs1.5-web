@@ -1,0 +1,64 @@
+{
+  "map": "moonbase",
+  "author": "lq",
+  "date": "2026-11-17",
+  "notice": "Original Counter-Strike/GoldSrc textures retain their original rights. Original map layout does not grant texture redistribution permission.",
+  "textures": [
+    {
+      "material": "luna_dust",
+      "map": "de_dust2",
+      "texture": "-0sand",
+      "width": 128,
+      "height": 128
+    },
+    {
+      "material": "luna_rock",
+      "map": "de_aztec",
+      "texture": "-0cstrike_fj2dk",
+      "width": 128,
+      "height": 128
+    },
+    {
+      "material": "luna_shell",
+      "map": "cs_747",
+      "texture": "planewhite",
+      "width": 64,
+      "height": 128
+    },
+    {
+      "material": "luna_metal",
+      "map": "cs_assault",
+      "texture": "metal_wall05b",
+      "width": 64,
+      "height": 64
+    },
+    {
+      "material": "luna_floor",
+      "map": "cs_747",
+      "texture": "drkmtlt_flr01",
+      "width": 80,
+      "height": 80
+    },
+    {
+      "material": "luna_console",
+      "map": "cs_office",
+      "texture": "~lab1_comp8b",
+      "width": 48,
+      "height": 128
+    },
+    {
+      "material": "luna_crate",
+      "map": "de_dust2",
+      "texture": "mltrycrtesd",
+      "width": 64,
+      "height": 64
+    },
+    {
+      "material": "luna_duct",
+      "map": "cs_assault",
+      "texture": "duct_flr01",
+      "width": 64,
+      "height": 80
+    }
+  ]
+}

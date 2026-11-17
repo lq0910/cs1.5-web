@@ -52,6 +52,8 @@ export interface Actor {
   hull: Hull;
   pitch: number;
   yaw: number;
+  /** 功能：局域网真人与 BOT 均使用 100 血，单机保留原规则；时间：2026-11-17；作者：lq。 */
+  maxHealth?: number;
   health: number;
   armor: number;
   alive: boolean;
@@ -137,7 +139,7 @@ export function respawnActor(
   actor.pitch = 0;
   actor.yaw = yaw;
   // 功能：玩家复活恢复 1000 血量，BOT 复活恢复 100 血量。时间：2026-10-05；作者：lq。
-  actor.health = actor.isBot ? 100 : 1000;
+  actor.health = actor.maxHealth ?? (actor.isBot ? 100 : 1000);
   actor.armor = 0;
   actor.alive = true;
   // 功能：复活后清除上一回合的阵亡时间，避免新角色继续播放倒地动作。时间：2026-09-29；作者：lq。

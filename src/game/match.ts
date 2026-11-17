@@ -31,7 +31,10 @@ import {
   traceActors,
 } from './actors.ts';
 import type { Actor, Team } from './actors.ts';
-import { aimDirection, makeWeaponRuntime, POINT_HULL } from './combat.ts';
+// 功能：整局重开时新建武器状态机以清除开火锁存与后坐力；时间：2026-11-17；作者：lq。
+import { aimDirection, CombatSystem, makeWeaponRuntime, POINT_HULL } from './combat.ts';
+// 功能：整局重开时恢复站立碰撞体并清除蹲伏、梯子与弹射冷却；时间：2026-11-17；作者：lq。
+import { createMoveState } from './movement.ts';
 import type { CombatEvents, ShotEvent } from './combat.ts';
 import type { WeaponRuntime } from './combat.ts';
 import { BUY_MENU, GameMode } from './gamemode.ts';
@@ -117,6 +120,8 @@ export interface MatchOptions {
   critters?: boolean;
   /** Ticks per second (fixed step). */
   tickRate?: number;
+  /** 功能：局域网由服务端创建全 BOT 席位并允许真人接管；时间：2026-11-17；作者：lq。 */
+  multiplayer?: boolean;
 }
 
 /**
@@ -212,7 +217,7 @@ export class Match {
     // 功能：默认使用简单 BOT 难度，降低玩家遭遇的命中与反应压力。时间：2026-09-29；作者：lq。
     this.skill = options.skill ?? 0.15;
     // 功能：简单难度 BOT 造成约 45% 武器伤害，最高难度恢复 100% 伤害。时间：2026-10-05；作者：lq。
-    this.botDamageMultiplier = 0.35 + this.skill * 0.65;
+    this.botDamageMultiplier = options.multiplayer ? 1 : 0.35 + this.skill * 0.65;
     // 功能：默认采用 5V5；显式人数供浏览器与无头测试使用，浏览器已按出生点容量收敛。
     // 功能：模拟层仍限制在 1..6，允许测试地图复用出生点，不改变既有物理与回合逻辑。时间：2026-10-21；作者：lq。
     const defaultSize = options.teamSize ?? Math.min(DEFAULT_TEAM_SIZE, mapTeamSizeLimit(options.map.spawns));
@@ -246,7 +251,7 @@ export class Match {
 
     // 功能：按地图解析后的阵营标签分组出生点；原版 start 为 CT、deathmatch 为 T。时间：2026-09-29；作者：lq。
     this.spawns = groupSpawnsByTeam(options.map.spawns);
-    const playerTeam = options.playerTeam ?? 'ct';
+    const playerTeam = options.multiplayer ? null : options.playerTeam ?? 'ct';
     // 功能：每阵营独立打乱四套经典皮肤；4v4 对局会各出现四种且每次开局顺序变化。时间：2026-09-29；作者：lq。
     const shuffleSkins = (): number[] => {
       const order = [0, 1, 2, 3];
@@ -346,6 +351,28 @@ export class Match {
     this.mode.setActors(this.actors);
   }
 
+  /** 功能：真人接管现有 BOT，继承当前生命和装备，避免中途加入复活刷物资；时间：2026-11-17；作者：lq。 */
+  claimSeat(team: Team, name: string): Actor | null {
+    const actor = this.actors.find((candidate) => candidate.team === team && candidate.isBot);
+    if (!actor) return null;
+    actor.isBot = false;
+    actor.name = name;
+    actor.maxHealth = 100;
+    actor.health = Math.min(100, actor.health);
+    actor.unlimitedFunds = false;
+    actor.unlimitedAmmo = false;
+    return actor;
+  }
+
+  /** 功能：断线席位恢复 BOT 并继承生命、C4 和装备，不改变回合胜负；时间：2026-11-17；作者：lq。 */
+  releaseSeat(actor: Actor): void {
+    actor.isBot = true;
+    actor.name = `BOT ${actor.team.toUpperCase()} ${actor.id}`;
+    this.brains.set(actor.id, new BotBrain(actor.id * 7919, actor.move.origin));
+    this.guardGoals.delete(actor.id);
+    this.advanceGoals.delete(actor.id);
+  }
+
   /** Starts the first round immediately (skips the warmup delay in tests). */
   startNow(now = 0): void {
     const events: RoundEvents = {
@@ -364,6 +391,47 @@ export class Match {
     this.map.interactions?.reset();
     this.restoreMapWeapons(now);
     this.autoBuyBots(now);
+  }
+
+  /** 功能：保留角色引用并重置整局状态，避免刷新页面或重建渲染场景；时间：2026-11-17；作者：lq。 */
+  restartNow(now = 0): void {
+    this.mode.resetMatch();
+    this.grenadeProjectiles.length = 0;
+    this.droppedWeapons.length = 0;
+    this.nextGrenadeId = 1;
+    this.nextDroppedWeaponId = 1;
+    this.nextSprayAt = now;
+    for (const actor of this.actors) {
+      actor.kills = 0;
+      actor.deaths = 0;
+      actor.money = actor.unlimitedFunds ? Infinity : 800;
+      actor.armor = 0;
+      actor.hasDefuseKit = false;
+      actor.grenades = actor.unlimitedFunds
+        ? { hegrenade: Infinity, flashbang: Infinity, smokegrenade: Infinity }
+        : { hegrenade: 0, flashbang: 0, smokegrenade: 0 };
+      actor.combat = new CombatSystem({
+        1: actor.unlimitedFunds ? (actor.team === 'ct' ? 'm4a1' : 'ak47') : 'knife',
+        2: actor.unlimitedFunds ? 'p228' : actor.team === 'ct' ? 'usp45' : 'glock18',
+        3: 'knife',
+      }, Math.floor(this.randomness() * 0xffffff));
+      actor.combat.selectSlot(2, now);
+      actor.selectedGrenade = null;
+      actor.selectedBomb = false;
+      actor.grenadeAction = null;
+      actor.grenadeActionEndTime = 0;
+      actor.grenadeAttackHeld = false;
+      actor.maxHealth = actor.maxHealth ?? (actor.unlimitedFunds ? 1000 : 100);
+      actor.health = actor.maxHealth;
+      actor.alive = true;
+      actor.diedAt = -99;
+      actor.move = createMoveState(actor.move.origin, actor.yaw);
+      actor.hull = actor.move.hull;
+      actor.pitch = 0;
+      actor.punch = { pitch: 0, yaw: 0 };
+      actor.lastShotAt = -99;
+    }
+    this.startNow(now);
   }
 
   /** 功能：新回合选择可达进攻包点并清空旧路线和守包位置，难度只调整战斗能力。时间：2026-10-09；作者：lq。 */
@@ -601,7 +669,8 @@ export class Match {
     return { position: trace.endpos, normal: trace.normal, yaw: actor.yaw };
   }
 
-  update(now: number, playerCommand?: ActorCommand): MatchEvents {
+  /** 功能：按角色 ID 路由多名真人输入，未收到输入时保持静止；时间：2026-11-17；作者：lq。 */
+  update(now: number, playerCommand?: ActorCommand, commands?: ReadonlyMap<number, ActorCommand>): MatchEvents {
     // 功能：回合更新前处理 C4 掉落，避免死亡持包者仍被视为可装包。时间：2026-09-30；作者：lq。
     this.mode.dropBomb();
     // 功能：拆包者阵亡即取消进度，下一名 CT 必须重新拆除。时间：2026-09-30；作者：lq。
@@ -646,13 +715,15 @@ export class Match {
     // 功能：每个固定步长推进手雷抛物线与墙地弹跳，直到引信到时才在当前位置爆炸。时间：2026-09-29；作者：lq。
     for (let i = this.grenadeProjectiles.length - 1; i >= 0; i--) {
       const grenade = this.grenadeProjectiles[i]!;
+      // 功能：月球外场的手雷同样降低重力，室内及原版地图沿用原版投掷倍率；时间：2026-11-17；作者：lq。
+      const gravity = GRENADE_GRAVITY * (this.world.gravityAt?.(grenade.position) ?? 800) / 800;
       // 功能：以原版半重力积分抛物线，避免全重力造成提前落在脚边。时间：2026-09-30；作者：lq。
       const target = v3(
         grenade.position.x + grenade.velocity.x * this.dt,
         grenade.position.y + grenade.velocity.y * this.dt,
-        grenade.position.z + grenade.velocity.z * this.dt - 0.5 * GRENADE_GRAVITY * this.dt * this.dt,
+        grenade.position.z + grenade.velocity.z * this.dt - 0.5 * gravity * this.dt * this.dt,
       );
-      grenade.velocity.z -= GRENADE_GRAVITY * this.dt;
+      grenade.velocity.z -= gravity * this.dt;
       const trace = this.world.traceHull(POINT_HULL, grenade.position, target);
       if (trace.fraction < 1) {
         const normal = trace.normal;
@@ -716,8 +787,10 @@ export class Match {
 
       // ---- 1. command
       let command: ActorCommand;
-      if (actor === this.player && playerCommand) {
-        command = playerCommand;
+      if (!actor.isBot) {
+        command = { ...(commands?.get(actor.id) ?? (actor === this.player ? playerCommand : undefined) ?? idleCommand(actor.yaw)) };
+        actor.yaw = command.yaw;
+        actor.pitch = command.pitch;
       } else if (this.mode.phase !== 'live') {
         // 功能：冻结和结算阶段不推进 BOT 路点与装包计时，避免开局先跳过出生区通路。时间：2026-10-09；作者：lq。
         command = idleCommand(actor.yaw);
@@ -814,7 +887,7 @@ export class Match {
       if (command.buttons & IN_USE) this.map.interactions?.use(actorEye(actor), aimDirection(command.pitch, command.yaw));
       pmPlayerMove(actor.move, this.world, cmd, this.dt);
       // 功能：持包 T 在包点按住左键安装；CT 靠近炸弹按住 E 拆除，松键立即中断。时间：2026-09-30；作者：lq。
-      if (actor === this.player) {
+      if (!actor.isBot) {
         if (actor.selectedBomb && (command.buttons & IN_ATTACK)) this.mode.progressPlant(actor, this.dt, now, events.mode);
         else if (actor === this.mode.bomb.carrier) this.mode.cancelPlant();
         if (command.buttons & IN_USE) this.mode.progressDefuse(actor, this.dt, events.mode);
@@ -935,17 +1008,29 @@ export class Match {
     direction.y /= length;
     direction.z /= length;
 
-    const worldDistance = length;
-    const actorHit = traceActors(shot.start, direction, this.actors, worldDistance, shooter);
+    // 功能：仅在各段空气弹道中寻找最近目标，不能命中墙内角色；累计距离和穿透衰减用于实际扣血；时间：2026-11-17；作者：lq。
+    let actorHit: ReturnType<typeof traceActors> = null;
+    let critterHit: ReturnType<typeof traceCritters> = null;
+    let damageScale = 1;
+    const segments = shot.segments ?? [{ start: shot.start, end: shot.end, startDistance: 0, damageScale: 1 }];
+    for (const segment of segments) {
+      const segmentLength = Math.hypot(segment.end.x - segment.start.x, segment.end.y - segment.start.y, segment.end.z - segment.start.z);
+      actorHit = traceActors(segment.start, direction, this.actors, segmentLength, shooter);
+      critterHit = traceCritters(segment.start, direction, this.critters, segmentLength);
+      if (actorHit) actorHit.hit.distance += segment.startDistance;
+      if (critterHit) critterHit.distance += segment.startDistance;
+      damageScale = segment.damageScale;
+      if (actorHit || critterHit) break;
+    }
     const weapon = WEAPONS[shot.weapon];
 
-    // 功能：小鸡和敌人谁更近就打中谁；墙体和现有队友穿透规则保持不变。时间：2026-10-21；作者：lq。
+    // 功能：小鸡和敌人谁更近就打中谁，穿透后的两类目标共用剩余伤害；时间：2026-11-17；作者：lq。
     const enemyHit = actorHit && actorHit.actor.team !== shooter.team ? actorHit : null;
-    const critterHit = traceCritters(shot.start, direction, this.critters, worldDistance);
     if (critterHit && (!enemyHit || critterHit.distance < enemyHit.hit.distance)) {
       const critter = critterHit.critter;
       const wasAlive = critter.alive;
-      critter.health -= weapon.damage;
+      // 功能：小鸡中弹同样计算穿墙与全程距离衰减；时间：2026-11-17；作者：lq。
+      critter.health -= weapon.damage * damageScale * Math.pow(weapon.rangeModifier, critterHit.distance / 500);
       critter.hitAt = now;
       if (critter.health <= 0) {
         critter.health = 0;
@@ -978,7 +1063,8 @@ export class Match {
     shot.distance = hit.distance;
     // 功能：BOT 开火伤害按难度缩放，避免简单模式仍能用原始武器伤害快速击杀玩家。时间：2026-10-05；作者：lq。
     const botDamageScale = shooter.isBot ? this.botDamageMultiplier : 1;
-    const raw = weapon.damage * botDamageScale * Math.pow(weapon.rangeModifier, hit.distance / 500) * weapon.hitgroups[hit.group];
+    // 功能：墙后人物的命中部位、距离、护甲与难度系数继续生效，并乘以穿墙剩余伤害；时间：2026-11-17；作者：lq。
+    const raw = weapon.damage * damageScale * botDamageScale * Math.pow(weapon.rangeModifier, hit.distance / 500) * weapon.hitgroups[hit.group];
     const result = damageActor(victim, raw, weapon.armorRatio);
 
     if (result.killed) {

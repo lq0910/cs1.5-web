@@ -258,4 +258,39 @@ export class BspCollisionWorld implements CollisionWorld {
     const contents = this.pointContentsInTree(this.hull0, root, p);
     return contents === CONTENTS_SOLID ? CONTENTS_SOLID : contents === CONTENTS_WATER ? CONTENTS_WATER : CONTENTS_EMPTY;
   }
+
+  /** 功能：在模型真实面多边形内查找命中贴图，避免把同平面相邻木门和混凝土混为一种材质；时间：2026-11-17；作者：lq。 */
+  surfaceMaterial(point: Vec3, normal: Vec3): string | undefined {
+    const model = this.bsp.models[this.modelIndex];
+    if (!model) return undefined;
+    for (let i = model.firstface; i < model.firstface + model.numfaces; i++) {
+      const face = this.bsp.faces[i];
+      if (!face) continue;
+      const plane = this.bsp.planes[face.planenum];
+      if (!plane || Math.abs(dot(plane.normal, normal)) < 0.99
+        || Math.abs(dot(plane.normal, point) - plane.dist) > 0.125) continue;
+      const vertices: Vec3[] = [];
+      for (let j = 0; j < face.numedges; j++) {
+        const edgeIndex = this.bsp.surfedges[face.firstedge + j]!;
+        const edge = this.bsp.edges[Math.abs(edgeIndex)];
+        const vertex = edge && this.bsp.vertices[edge.v[edgeIndex >= 0 ? 0 : 1]];
+        if (vertex) vertices.push(vertex);
+      }
+      if (vertices.length < 3) continue;
+      let positive = false, negative = false;
+      for (let j = 0; j < vertices.length; j++) {
+        const a = vertices[j]!, b = vertices[(j + 1) % vertices.length]!;
+        const ab = v3(b.x - a.x, b.y - a.y, b.z - a.z);
+        const ap = v3(point.x - a.x, point.y - a.y, point.z - a.z);
+        const side = dot(v3(ab.y * ap.z - ab.z * ap.y, ab.z * ap.x - ab.x * ap.z,
+          ab.x * ap.y - ab.y * ap.x), plane.normal);
+        positive ||= side > 0.125;
+        negative ||= side < -0.125;
+      }
+      if (positive && negative) continue;
+      const texinfo = this.bsp.texinfo[face.texinfo];
+      return texinfo ? this.bsp.miptex[texinfo.miptex]?.name : undefined;
+    }
+    return undefined;
+  }
 }

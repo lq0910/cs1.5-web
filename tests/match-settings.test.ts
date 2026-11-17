@@ -68,6 +68,54 @@ test('each team size is independent and the player can fight alone', () => {
   assert.equal(soloT.actors.filter((actor) => actor.team === 'ct').length, 5);
 });
 
+// 功能：验证原地重开清空比分、击杀与经济状态，同时保留玩家角色引用；时间：2026-11-17；作者：lq。
+test('restarting a match resets the full game without replacing actors', () => {
+  const map = { ...makeTestRoom(2048), spawns: spawns(4, 4) };
+  const match = new Match({ map, graph: null, sites: [], ctSize: 2, tSize: 2 });
+  const player = match.player!;
+  match.mode.score.ct = 7;
+  match.mode.score.t = 3;
+  match.mode.round = 12;
+  match.mode.matchOver = true;
+  match.mode.winner = 'ct';
+  player.kills = 9;
+  player.deaths = 4;
+  player.health = 1;
+  player.alive = false;
+  player.move.ducked = true;
+  player.move.mapLaunchCooldown = 100;
+  match.mode.bomb.state = 'planted';
+  match.mode.bombTimeLeft = 10;
+  match.mode.lossStreak.ct = 4;
+  match.mode.killFeed.push({ killer: 'old', victim: player.name, weapon: 'ak47', headshot: false, at: 30 });
+  const oldCombat = player.combat;
+
+  match.restartNow(42);
+
+  assert.equal(match.player, player);
+  assert.deepEqual(match.mode.score, { ct: 0, t: 0 });
+  assert.equal(match.mode.round, 1);
+  assert.equal(match.mode.phase, 'live');
+  assert.equal(match.mode.matchOver, false);
+  assert.equal(match.mode.winner, null);
+  assert.equal(match.mode.bomb.state, 'carried');
+  assert.equal(match.mode.bombTimeLeft, 0);
+  assert.deepEqual(match.mode.lossStreak, { ct: 0, t: 0 });
+  assert.equal(match.mode.killFeed.length, 0);
+  assert.equal(player.alive, true);
+  assert.equal(player.health, 1000);
+  assert.equal(player.kills, 0);
+  assert.equal(player.deaths, 0);
+  assert.equal(player.combat.current().id, 'p228');
+  assert.notEqual(player.combat, oldCombat);
+  assert.equal(player.move.ducked, false);
+  assert.equal(player.move.mapLaunchCooldown, undefined);
+  assert.equal(match.grenadeProjectiles.length, 0);
+  assert.equal(match.droppedWeapons.length, 0);
+  match.update(43);
+  assert.equal(match.mode.matchOver, false);
+});
+
 // 功能：保存的设置准确回显，旧版平衡人数自动迁移，JSON 损坏及非法值均有合理结果。时间：2026-10-21；作者：lq。
 test('saved settings persist choices and recover from malformed values', () => {
   assert.deepEqual(parseMatchSettings('{"version":2,"team":"t","skill":"0.75","bots":"7"}'), {

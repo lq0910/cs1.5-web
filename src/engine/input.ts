@@ -113,10 +113,14 @@ export class Input {
     this.keys.delete(event.code);
   };
 
-  private handleBlur = (): void => {
+  /** 功能：重开时清空按键和鼠标增量，避免旧输入带入新局；时间：2026-11-17；作者：lq。 */
+  reset(): void {
     this.keys.clear();
     this.mouseButtons = 0;
-  };
+    this.mouseDX = this.mouseDY = 0;
+  }
+
+  private handleBlur = (): void => { this.reset(); };
 
   private handleLockChange = (): void => {
     const locked = document.pointerLockElement === this.element;

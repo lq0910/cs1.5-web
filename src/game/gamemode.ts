@@ -183,6 +183,23 @@ export class GameMode {
     this.timeLeft = this.options.warmupTime;
   }
 
+  /** 功能：清空整局比分、经济连败和胜负状态，供原地重开使用；时间：2026-11-17；作者：lq。 */
+  resetMatch(): void {
+    this.phase = 'warmup';
+    this.round = 0;
+    this.score = { ct: 0, t: 0 };
+    this.timeLeft = this.options.warmupTime;
+    this.bombTimeLeft = 0;
+    this.lossStreak = { ct: 0, t: 0 };
+    this.killFeed.length = 0;
+    this.matchOver = false;
+    this.winner = null;
+    this.bomb = {
+      state: 'carried', carrier: null, position: null, planter: null, defuser: null,
+      defuseProgress: 0, plantProgress: 0, siteName: '',
+    };
+  }
+
   get sitesList(): ObjectiveArea[] {
     return this.sites;
   }
@@ -259,7 +276,8 @@ export class GameMode {
       actor.move.velocity = v3(0, 0, 0);
       actor.move.onground = true;
       // 功能：每回合开始恢复玩家 1000 血量，BOT 保持 100，确保增强生命值不会在换局时丢失。时间：2026-10-05；作者：lq。
-      actor.health = actor.isBot ? 100 : 1000;
+      // 功能：联机真人复活也遵循统一血量规则；时间：2026-11-17；作者：lq。
+      actor.health = actor.maxHealth ?? (actor.isBot ? 100 : 1000);
       // 功能：阵亡者下一局重新购买护甲，存活者保留原有护甲。时间：2026-09-29；作者：lq。
       if (!survived) actor.armor = 0;
       actor.alive = true;

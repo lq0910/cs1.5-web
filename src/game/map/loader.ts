@@ -12,9 +12,15 @@
  */
 
 import type * as THREE from 'three';
+// 功能：客户端记录真实地图文件指纹用于联机握手；时间：2026-11-17；作者：lq。
+import { mapFingerprint } from '../../net/protocol.ts';
 import { v3 } from '../../engine/math.ts';
 import type { MapData, MapSpawn } from './build.ts';
 import { buildWhiteHouse } from './whitehouse.ts';
+// 功能：月球基地使用原创布局和本地原版贴图，不需要预编译 BSP 即可进入；时间：2026-11-17；作者：lq。
+import { buildMoonbase, MOONBASE_ID } from './moonbase.ts';
+import { createMoonbaseVisuals, loadMoonbaseMaterials } from '../../engine/render/moonbase.ts';
+import type { MaterialEntry } from '../../engine/render/textures.ts';
 import { parseBsp, bspStats } from '../../engine/bsp/reader.ts';
 import { BspCollisionWorld } from '../../engine/bsp/collision.ts';
 // 功能：为 Assault 单独启用实体墙、门和梯子，避免改变其他已验收 BSP 的玩法；时间：2026-11-05；作者：lq。
@@ -135,6 +141,9 @@ export function resolveSpawn(world: CollisionWorld, origin: Vec3): Vec3 {
 
 
 export interface LoadedMap {
+  /** 功能：原创地图的专属原版材质与按模拟时间推进的环境动画；时间：2026-11-17；作者：lq。 */
+  materials?: Map<string, MaterialEntry>;
+  updateVisuals?: (time: number) => void;
   map: MapData;
   /** Render object for BSP maps; undefined for the built-in box map. */
   object?: THREE.Object3D;
@@ -151,7 +160,8 @@ export interface LoadedMap {
  * has extracted them, then the built-in test map (always available).
  */
 // 功能：沙漠2保持默认图，仓库和雪地仅显式选择时加载，缺少素材时使用内置测试图；时间：2026-11-05；作者：lq。
-const DEFAULT_BSP_CHAIN = ['de_dust2', 'white_house'];
+// 功能：无显式地图参数或所选地图缺失时优先加载月球基地，原版沙漠2仍可手动选择；时间：2026-11-17；作者：lq。
+const DEFAULT_BSP_CHAIN = [MOONBASE_ID, 'de_dust2'];
 
 /** Asset root; anything extracted from the user's CS install lives under here. */
 export const CSTRIKE_ASSET_ROOT = 'cstrike';
@@ -388,6 +398,7 @@ async function loadBspMap(name: string): Promise<LoadedMap | null> {
   const map: MapData = {
     interactions,
     name: `BSP: ${name}`,
+    fingerprint: mapFingerprint(new Uint8Array(buffer)),
     bounds: {
       mins: v3(world.mins.x, world.mins.y, world.mins.z),
       maxs: v3(world.maxs.x, world.maxs.y, world.maxs.z),
@@ -427,13 +438,22 @@ async function loadBspMap(name: string): Promise<LoadedMap | null> {
 export async function loadMap(requested?: string | null): Promise<LoadedMap> {
   const candidates: string[] = [];
   // 功能：iceworld 使用规范地图文件名 fy_iceworld，兼容简写入口并过滤路径字符；时间：2026-11-05；作者：lq。
-  const target = requested === 'iceworld' ? 'fy_iceworld' : requested;
+  const target = requested === 'iceworld' ? 'fy_iceworld'
+    : requested === 'de_moonbase' || requested === 'moon_base' ? MOONBASE_ID : requested;
   if (target && /^[a-z0-9_-]+$/i.test(target)) candidates.push(target);
   for (const name of DEFAULT_BSP_CHAIN) {
     if (!candidates.includes(name)) candidates.push(name);
   }
 
   for (const candidate of candidates) {
+    // 功能：优先构建所选原创地图，避免不存在的 BSP 请求把用户悄悄送回沙漠2；时间：2026-11-17；作者：lq。
+    if (candidate === MOONBASE_ID) {
+      const map = buildMoonbase();
+      const assets = await loadMoonbaseMaterials();
+      const visuals = createMoonbaseVisuals(assets.materials, map.interactions);
+      return { map, source: 'boxes', object: visuals.object, materials: assets.materials,
+        updateVisuals: visuals.update, note: assets.note };
+    }
     const loaded = await loadBspMap(candidate);
     if (loaded) return loaded;
   }

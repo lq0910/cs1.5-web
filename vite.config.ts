@@ -10,11 +10,14 @@ export default defineConfig({
   // 功能：仅扫描游戏入口，避免 shots 下的本地验收页影响开发依赖预构建。时间：2026-10-22；作者：lq。
   optimizeDeps: {
     entries: ['index.html'],
+    // 功能：Three/HLS 已提供浏览器 ESM，直接加载以避免并行开发服务或重启造成旧预构建哈希 504，阻断地图与开始按钮；时间：2026-11-17；作者：lq。
+    exclude: ['three', 'hls.js'],
   },
   server: {
-    host: '127.0.0.1',
+    // 功能：房主将前端共享给局域网队友，联机状态仍由独立房主服务判定；时间：2026-11-17；作者：lq。
+    host: '0.0.0.0',
     port: 5173,
-    strictPort: false,
+    strictPort: true,
     // Assets extracted from the user's local CS 1.5 install live in public/cstrike.
     fs: { strict: false },
   },

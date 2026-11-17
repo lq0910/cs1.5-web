@@ -15,10 +15,15 @@ export interface MapInteractions {
   update(dt: number, occupants: MapOccupant[]): void;
   use(eye: Vec3, direction: Vec3): boolean;
   reset(): void;
+  /** 功能：联机同步门体进度，同时更新显示和碰撞；时间：2026-11-17；作者：lq。 */
+  snapshotDoors?(): { index: number; progress: number }[];
+  applyDoors?(states: { index: number; progress: number }[]): void;
 }
 
 /** 功能：保存局部 BSP 碰撞及世界坐标包围盒，先做包围盒剔除以控制射线成本；时间：2026-11-05；作者：lq。 */
 interface EntityBody {
+  /** 功能：活动门保留模型贴图名，供旋转和平移后的子弹材质判定；时间：2026-11-17；作者：lq。 */
+  material?: string;
   index: number;
   entity: BspEntity;
   world: BspCollisionWorld;
@@ -82,6 +87,10 @@ export class BspEntityWorld implements CollisionWorld, MapInteractions {
       if (!model || index === 0) continue;
       const body: EntityBody = { index, entity, world: new BspCollisionWorld(bsp, index),
         origin: entity.origin ?? v3(), mins: model.mins, maxs: model.maxs };
+      // 功能：活动门使用自身 BSP 模型材质，缺少贴图时按普通门处理；时间：2026-11-17；作者：lq。
+      const face = bsp.faces[model.firstface];
+      const texinfo = face && bsp.texinfo[face.texinfo];
+      body.material = texinfo ? bsp.miptex[texinfo.miptex]?.name : undefined;
       if (entity.classname === 'func_ladder') { this.ladders.push(body); continue; }
       if (entity.classname === 'func_door' || entity.classname === 'func_door_rotating') {
         const rotating = entity.classname === 'func_door_rotating';
@@ -127,10 +136,23 @@ export class BspEntityWorld implements CollisionWorld, MapInteractions {
     for (const door of this.doors) {
       const hit = traceHullVsBrush(door.brush, hull, start, end);
       if (!hit) continue;
-      merge({ ...hit, endpos: v3(start.x + (end.x - start.x) * hit.fraction,
+      // 功能：门体碰撞携带原材质，不改变角色与手雷的碰撞行为；时间：2026-11-17；作者：lq。
+      merge({ ...hit, material: door.material ?? 'door', endpos: v3(start.x + (end.x - start.x) * hit.fraction,
         start.y + (end.y - start.y) * hit.fraction, start.z + (end.z - start.z) * hit.fraction) });
     }
     return result;
+  }
+
+  /** 功能：将子弹命中材质查询转换到静态实体局部坐标，世界墙继续查询真实 BSP 面；时间：2026-11-17；作者：lq。 */
+  surfaceMaterial(point: Vec3, normal: Vec3): string | undefined {
+    const inside = v3(point.x - normal.x * 0.125, point.y - normal.y * 0.125, point.z - normal.z * 0.125);
+    for (const body of this.solids) {
+      if (overlaps(body, { mins: v3(), maxs: v3() }, inside)
+        && body.world.pointContents(shifted(inside, body.origin, -1)) === CONTENTS_SOLID) {
+        return body.world.surfaceMaterial(shifted(point, body.origin, -1), normal);
+      }
+    }
+    return this.base.surfaceMaterial(point, normal);
   }
 
   /** 功能：实体墙与当前门姿态参与点内容检测，水等非实心世界内容继续沿用原 BSP；时间：2026-11-05；作者：lq。 */
@@ -195,6 +217,22 @@ export class BspEntityWorld implements CollisionWorld, MapInteractions {
     if (!selected) return false;
     selected.requested = true;
     return true;
+  }
+
+  /** 功能：房主输出门体状态，客户端按相同进度重建碰撞；时间：2026-11-17；作者：lq。 */
+  snapshotDoors(): { index: number; progress: number }[] {
+    return this.doors.map(({ index, progress }) => ({ index, progress }));
+  }
+
+  /** 功能：客户端门体仅跟随服务端，不独立猜测自动开关；时间：2026-11-17；作者：lq。 */
+  applyDoors(states: { index: number; progress: number }[]): void {
+    for (const state of states) {
+      const door = this.doors.find((candidate) => candidate.index === state.index);
+      if (!door) continue;
+      door.progress = Math.max(0, Math.min(1, state.progress));
+      door.brush = doorBrush(door, door.progress);
+      this.publish(door);
+    }
   }
 
   /** 功能：回合重开时门回到关闭姿态，清除上一局等待与触发状态；时间：2026-11-05；作者：lq。 */

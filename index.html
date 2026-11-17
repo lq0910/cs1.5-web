@@ -131,6 +131,10 @@
   #pause-menu[hidden] { display: none !important; }
   #pause-menu { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: rgba(4, 7, 10, .56); backdrop-filter: blur(3px); }
   #pause-menu .pause-card { width: min(360px, calc(100vw - 40px)); padding: 30px 28px 26px; border: 1px solid rgba(234,179,8,.7); border-radius: 8px; background: linear-gradient(145deg, rgba(20,27,35,.98), rgba(7,11,16,.98)); box-shadow: 0 20px 60px rgba(0,0,0,.7), inset 0 0 28px rgba(234,179,8,.06); text-align: center; }
+  /* 功能：新增房间地址和关闭按钮后，小窗口暂停面板可滚动且按钮不会超出视口；时间：2026-11-17；作者：lq。 */
+  #pause-menu .pause-card { box-sizing: border-box; max-height: calc(100vh - 32px); overflow-y: auto; }
+  #hosted-room-status { overflow-wrap: anywhere; }
+  [data-stop-hosted-room][hidden] { display: none !important; }
   #pause-menu h2 { margin: 0 0 8px; color: #facc15; font-size: 24px; letter-spacing: .12em; }
   #pause-menu p { margin: 0 0 22px; color: #aeb6bd; font-size: 13px; }
   /* 功能：鼠标锁定失败时在暂停面板内说明原因，避免玩家以为游戏卡死。时间：2026-10-31；作者：lq。 */
@@ -146,8 +150,8 @@
   .pause-support strong { display: block; margin-bottom: 4px; color: #f3d46b; font-size: 13px; }
   .pause-support span { color: #aeb6bd; font-size: 11px; line-height: 1.45; }
   #panel { position: relative; width: 100%; height: 100%; }
-  /* 功能：隐藏尚未实现的服务器、排行榜和在线建房入口。时间：2026-10-30；作者：lq。 */
-  [data-purpose="nav-item-servers"], [data-purpose="nav-item-ranking"], [data-purpose="action-server-list"], [data-purpose="action-create-room"] { display: none !important; }
+  /* 功能：恢复首页创建房间入口，保留局域网顶栏入口并隐藏未实现的列表与排行榜；时间：2026-11-17；作者：lq。 */
+  [data-purpose="nav-item-ranking"], [data-purpose="action-server-list"] { display: none !important; }
   #crosshair, #hitmarker, #flashbang, #bombflash, #scope, #status, #roundbar, #feed, #radio-caption, #buymenu, #centre, #radar, #scoreboard, #hud, #team-select, #nomap { pointer-events: none; }
   #nomap[hidden], #team-select[hidden] { display: none !important; }
   /* 功能：恢复 FPS 对局准星，在鼠标锁定后显示于画面中心。时间：2026-10-01；作者：lq。 */
@@ -326,7 +330,8 @@
 </div>
 </a>
 <!-- Play Tab -->
-<a class="flex flex-col items-center text-gray-400 hover:text-cs-gold tactical-transition group" data-purpose="nav-item-play" href="#">
+<!-- 功能：顶部开始游戏入口复用快速开始按钮的对局启动逻辑；时间：2026-11-17；作者：lq。 -->
+<a class="flex flex-col items-center text-gray-400 hover:text-cs-gold tactical-transition group" data-purpose="nav-item-play" data-menu="play" href="#">
 <i class="fa-solid fa-gamepad text-lg mb-1 group-hover:scale-110 tactical-transition"></i>
 <div class="flex flex-col items-center leading-none">
 <span class="font-bold tracking-wider text-xs">开始游戏</span>
@@ -337,8 +342,8 @@
 <a class="flex flex-col items-center text-gray-400 hover:text-cs-gold tactical-transition group" data-purpose="nav-item-servers" data-menu="lan" href="#">
 <i class="fa-solid fa-server text-lg mb-1 group-hover:scale-110 tactical-transition"></i>
 <div class="flex flex-col items-center leading-none">
-<span class="font-bold tracking-wider text-xs">服务器</span>
-<span class="text-[9px] tracking-widest text-gray-500 group-hover:text-cs-gold/70 font-mono mt-0.5">SERVERS</span>
+<span class="font-bold tracking-wider text-xs">局域网</span>
+<span class="text-[9px] tracking-widest text-gray-500 group-hover:text-cs-gold/70 font-mono mt-0.5">LAN</span>
 </div>
 </a>
 <!-- Settings Tab -->
@@ -508,8 +513,11 @@
 <div class="w-[370px] flex flex-col space-y-4 shrink-0" data-purpose="right-information-panel">
 <!-- 功能：首页右侧提供 Dust2 默认图、Assault 白房子和 Iceworld 雪地图直达切换；时间：2026-11-05；作者：lq。 -->
 <section class="tactical-card border border-yellow-400/25 rounded-md p-4 text-xs shadow-xl" data-purpose="map-switch-card">
-<div class="flex items-center justify-between border-b border-white/10 pb-2.5 mb-3"><div class="flex items-center space-x-2"><span class="text-white font-bold text-sm tracking-wide">地图切换</span><span class="text-gray-500 font-mono text-[11px] uppercase tracking-wider">/ MAPS</span></div><span class="text-cs-gold text-[10px]">Dust2 默认</span></div>
-<div class="grid grid-cols-3 gap-2">
+<!-- 功能：首页默认地图标识切换为月球基地；时间：2026-11-17；作者：lq。 -->
+<div class="flex items-center justify-between border-b border-white/10 pb-2.5 mb-3"><div class="flex items-center space-x-2"><span class="text-white font-bold text-sm tracking-wide">地图切换</span><span class="text-gray-500 font-mono text-[11px] uppercase tracking-wider">/ MAPS</span></div><span class="text-cs-gold text-[10px]">月球基地默认</span></div>
+<!-- 功能：月球基地与原版地图并列，首页四入口采用两列避免按钮文字拥挤；时间：2026-11-17；作者：lq。 -->
+<div class="grid grid-cols-2 gap-2">
+<button type="button" data-map-choice="moonbase" aria-pressed="true" class="map-choice rounded border border-yellow-400/60 bg-yellow-500/10 px-2 py-2.5 text-left hover:border-yellow-400/50 hover:bg-white/[0.06] focus-visible:ring-1 focus-visible:ring-cs-gold tactical-transition"><strong class="block text-yellow-200 text-[11px]">月球基地 · 原创</strong><span class="mt-1 block text-gray-400 font-mono text-[9px]">LUNA-15 / LOW GRAVITY</span></button>
 <button type="button" data-map-choice="de_dust2" aria-pressed="false" class="map-choice rounded border border-white/10 bg-black/20 px-2 py-2.5 text-left hover:border-yellow-400/50 hover:bg-white/[0.06] focus-visible:ring-1 focus-visible:ring-cs-gold tactical-transition"><strong class="block text-gray-200 text-[11px]">沙漠2</strong><span class="mt-1 block text-gray-400 font-mono text-[9px]">de_dust2</span></button>
 <button type="button" data-map-choice="cs_assault" aria-pressed="false" class="map-choice rounded border border-white/10 bg-black/20 px-2 py-2.5 text-left hover:border-yellow-400/50 hover:bg-white/[0.06] focus-visible:ring-1 focus-visible:ring-cs-gold tactical-transition"><strong class="block text-gray-200 text-[11px]">白房子</strong><span class="mt-1 block text-gray-400 font-mono text-[9px]">cs_assault</span></button>
 <button type="button" data-map-choice="fy_iceworld" aria-pressed="false" class="map-choice rounded border border-white/10 bg-black/20 px-2 py-2.5 text-left hover:border-yellow-400/50 hover:bg-white/[0.06] focus-visible:ring-1 focus-visible:ring-cs-gold tactical-transition"><strong class="block text-gray-200 text-[11px]">雪地小图</strong><span class="mt-1 block text-gray-400 font-mono text-[9px]">iceworld</span></button>
@@ -587,16 +595,23 @@
 <div id="pause-menu" hidden>
   <section class="pause-card" role="dialog" aria-modal="true" aria-labelledby="pause-title">
     <h2 id="pause-title">游戏已暂停</h2>
-    <p>对局状态已冻结，选择继续即可回到当前回合。</p>
+    <!-- 功能：单机暂停冻结模拟，联机暂停只释放本机操作，房间仍持续运行；时间：2026-11-17；作者：lq。 -->
+    <p id="pause-state-description">对局状态已冻结，选择继续即可回到当前回合。</p>
     <!-- 功能：鼠标锁定失败时给出可执行的恢复建议。时间：2026-10-31；作者：lq。 -->
     <p id="pause-hint" hidden></p>
+    <!-- 功能：房主暂停时显示队友加入地址，提供主动关闭房间入口；时间：2026-11-17；作者：lq。 -->
+    <p id="hosted-room-status" hidden aria-live="polite"></p>
     <!-- 功能：暂停菜单提供不打断操作的公众号和交流群提示。时间：2026-10-30；作者：lq。 -->
     <div class="pause-support"><img data-zoomable src="/support/wechat-pay.jpg" alt="微信赞赏码"><div><strong>支持 CS1.5 Web</strong><span>感谢你的赞赏。QQ群：1130466174，欢迎交流素材导入和玩法。</span></div></div>
     <div class="pause-actions">
       <button id="resumeBtn" class="primary" type="button">继续游戏</button>
+      <!-- 功能：玩家或房主在暂停页面原地重开整局；时间：2026-11-17；作者：lq。 -->
+      <button id="pauseRestartBtn" type="button">重开游戏</button>
       <!-- 功能：暂停时直接进入机器人数量与难度设置。时间：2026-10-10；作者：lq。 -->
       <button type="button" data-menu="settings">游戏设置</button>
       <button id="pauseExitBtn" type="button">返回主菜单</button>
+      <!-- 功能：关闭原生房主服务并返回单机主菜单；时间：2026-11-17；作者：lq。 -->
+      <button type="button" data-stop-hosted-room hidden>关闭房间并返回首页</button>
     </div>
   </section>
 </div>
@@ -637,8 +652,8 @@
           },
           create: {
             title: '创建房间 / CREATE SERVER',
-            // 功能：提供默认 Dust2、可选 Assault / Iceworld 与内置地图入口，显示实际载入地图并在游戏就绪后允许切换；时间：2026-11-05；作者：lq。
-            body: `<p class="setting-hint">当前地图：<strong id="current-map-name">地图加载中…</strong></p><div class="setting-row"><label for="room-map">选择地图</label><select id="room-map"><option value="de_dust2">沙漠2（默认） · de_dust2</option><option value="cs_assault">白房子 / 72街仓库 · cs_assault</option><option value="fy_iceworld">雪地小图 · fy_iceworld</option><option value="white_house">内置移动测试图 · white_house</option></select></div><p class="setting-hint">仓库：靠近门自动开启，也可对准门按 E；贴近梯子按 W / S 攀爬，Space 跳离。雪地：四掩体近距离对战，靠近地面枪械按 E 更换。人质救援尚未实现。</p><p class="setting-note">原版地图需先导入本地素材；缺少所选地图时会回退到可用地图。切换地图将重新开局。</p><div class="menu-modal-actions"><button data-close-modal>取消</button><button id="start-selected-map" class="primary" disabled>载入地图</button></div>`
+            // 功能：客户端在创建房间表单内选择地图与规则，一键启动内置服务；网页版保留单机地图入口；时间：2026-11-17；作者：lq。
+            body: `<p class="setting-hint">${window.__TAURI__?.core?.invoke ? '创建局域网房间后，同一网络的队友可在「局域网」输入你的地址加入。关闭客户端将结束房间。' : '网页版可载入单机地图或从「局域网」加入房间；桌面客户端支持直接创建局域网房间。'}</p><p class="setting-hint">当前地图：<strong id="current-map-name">地图加载中…</strong></p><div class="setting-row"><label for="room-map">选择地图</label><select id="room-map" data-room-option><option value="moonbase">月球基地 · LUNA-15（默认）</option><option value="de_dust2">沙漠2 · de_dust2</option><option value="cs_assault">白房子 / 72街仓库 · cs_assault</option><option value="fy_iceworld">雪地小图 · fy_iceworld</option><option value="white_house">原移动测试图 · white_house</option></select></div><p class="setting-hint">月球基地：A 反应堆 / B 登月坪双包点，三路回环；室外低重力长跳，舱内标准重力。观测桥可上下包抄，实验室西侧维护道按 Ctrl 蹲行。</p>${window.__TAURI__?.core?.invoke ? `<div class="setting-row"><label for="room-name">玩家名称</label><input id="room-name" maxlength="16" value="Host" autocomplete="nickname" /></div><div class="setting-row"><label for="room-team">玩家阵营</label><select id="room-team"><option value="ct">反恐精英 CT</option><option value="t">恐怖分子 T</option></select></div><div class="setting-row"><label for="room-port">房间端口</label><input id="room-port" type="number" min="1024" max="65535" value="3001" data-room-option /></div><div class="setting-row"><label for="room-ct">CT 人数（含真人）</label><input id="room-ct" type="number" min="1" max="6" value="5" data-room-option /></div><div class="setting-row"><label for="room-t">T 人数（含真人）</label><input id="room-t" type="number" min="1" max="6" value="5" data-room-option /></div><div class="setting-row"><label for="room-skill">机器人难度</label><select id="room-skill" data-room-option><option value="0.15">简单</option><option value="0.45" selected>普通</option><option value="0.75">困难</option><option value="0.95">专家</option></select></div><div class="setting-row"><label for="room-critters">地图小鸡</label><input id="room-critters" type="checkbox" checked data-room-option /></div><p class="setting-note">双方最多各 6 人，人数受地图出生点限制，真人接管 BOT 席位。原版地图需先导入相同素材；月球基地与移动测试图可直接创建。</p><p id="desktop-host-status" class="setting-hint" role="status" aria-live="polite"></p><div class="menu-modal-actions"><button data-close-modal>取消</button><button data-stop-hosted-room hidden>关闭房间</button><button id="desktop-host-start" class="primary">创建并进入</button></div>` : `<p class="setting-note">选择地图后点击载入，再用「快速开始」进入单机对局。多人开房请使用桌面客户端。</p><div class="menu-modal-actions"><button data-close-modal>取消</button><button id="start-selected-map" class="primary" disabled>载入单机地图</button></div>`}`
           },
           settings: {
             title: '游戏设置 / SETTINGS',
@@ -646,8 +661,9 @@
             body: `<div class="setting-row"><label for="setting-team">玩家阵营</label><select id="setting-team"><option value="ct">反恐精英 CT</option><option value="t">恐怖分子 T</option></select></div><div class="setting-row"><label for="setting-skill">机器人难度</label><select id="setting-skill"><option value="0.15">简单</option><option value="0.45">普通</option><option value="0.75">困难</option><option value="0.95">专家</option></select></div><div class="setting-row"><label for="setting-ct">CT 人数</label><div><input id="setting-ct" type="range" min="1" max="6" step="1" value="5" disabled /><output id="setting-ct-value" for="setting-ct">地图加载中…</output></div></div><div class="setting-row"><label for="setting-t">T 人数</label><div><input id="setting-t" type="range" min="1" max="6" step="1" value="5" disabled /><output id="setting-t-value" for="setting-t">地图加载中…</output></div></div><p id="setting-team-hint" class="setting-hint">人数包含你自己；把本方设为 1 人即可独自作战。</p><div class="setting-row"><label for="setting-critters">地图小鸡</label><div><label class="setting-check"><input id="setting-critters" type="checkbox" checked /> 每回合随机生成可射击的小鸡</label></div></div><p id="setting-bots-limit" class="setting-hint">人数上限按地图出生点自动调整。</p><p class="setting-note">小鸡彩蛋来自原版 cs_italy 的经典设定：可射击、掉落羽毛，不影响比分与经济。</p><div class="menu-modal-actions"><button data-close-modal>取消</button><button id="apply-match-settings" class="primary" data-apply-settings disabled>应用并重新开局</button></div>`
           },
           lan: {
-            title: '局域网服务器 / LAN SERVERS',
-            body: `<table class="lan-table"><thead><tr><th>房间</th><th>地图</th><th>玩家</th><th>延迟</th></tr></thead><tbody><tr><td>CT_Fan001 的训练房</td><td>de_dust2</td><td>3 / 10</td><td>12 ms</td></tr><tr><td>Dust2 经典对战</td><td>de_dust</td><td>6 / 10</td><td>24 ms</td></tr><tr><td>Inferno 夜战</td><td>de_inferno</td><td>2 / 10</td><td>31 ms</td></tr></tbody></table><div class="menu-modal-actions"><button class="primary" data-close-modal>刷新列表</button></div>`
+            title: '局域网对战 / LAN GAME',
+            // 功能：顶栏局域网入口直接提供房主地址、地图、昵称和阵营选择；时间：2026-11-17；作者：lq。
+            body: `<p class="setting-hint">房主在客户端点击「创建房间」，队友输入房间显示的 IP 和端口加入（如 192.168.1.10:3001）。地图版本会在连接时自动校验。</p><div class="setting-row"><label for="lan-host-address">房主 IP</label><input id="lan-host-address" value="${location.hostname || '127.0.0.1'}" autocomplete="url" /></div><div class="setting-row"><label for="lan-map">地图</label><select id="lan-map"><option value="moonbase">月球基地 · LUNA-15</option><option value="de_dust2">沙漠2 · de_dust2</option><option value="cs_assault">仓库 · cs_assault</option><option value="fy_iceworld">雪地 · fy_iceworld</option><option value="white_house">白房子 · white_house</option></select></div><div class="setting-row"><label for="lan-player-name">玩家名称</label><input id="lan-player-name" value="Player" maxlength="16" autocomplete="nickname" /></div><div class="setting-row"><label for="lan-team">加入阵营</label><select id="lan-team"><option value="ct">反恐精英 CT</option><option value="t">恐怖分子 T</option></select></div><p id="lan-connect-status" class="setting-hint" aria-live="polite"></p><div class="menu-modal-actions"><button data-close-modal>取消</button><button id="lan-connect" class="primary">连接并进入</button></div>`
           },
           support: {
             title: '支持作者 / SUPPORT',
@@ -663,8 +679,34 @@
         if (kind === 'settings') window.dispatchEvent(new Event('cs15-open-settings'));
         // 功能：让地图选择面板同步实际加载结果，避免把素材回退后的地图标成 Assault；时间：2026-11-05；作者：lq。
         if (kind === 'create') window.dispatchEvent(new Event('cs15-open-map-menu'));
+        // 功能：局域网菜单打开时回显当前地图，加入房间默认尝试同图；时间：2026-11-17；作者：lq。
+        if (kind === 'lan') window.dispatchEvent(new Event('cs15-open-map-menu'));
       };
       const closeModal = () => { if (modal) modal.hidden = true; };
+      // 功能：将房主地址、昵称和阵营写入联机地址，地图素材由客户端握手比对；时间：2026-11-17；作者：lq。
+      document.addEventListener('click', (event) => {
+        if (!(event.target instanceof Element) || !event.target.closest('#lan-connect')) return;
+        const hostInput = document.getElementById('lan-host-address')?.value.trim();
+        const [host, portText] = (hostInput || '').split(':');
+        const name = document.getElementById('lan-player-name')?.value.trim() || 'Player';
+        const team = document.getElementById('lan-team')?.value || 'ct';
+        const status = document.getElementById('lan-connect-status');
+        if (!host || !/^([a-zA-Z0-9.-]+)(:\d{1,5})?$/.test(hostInput || '')
+          || (portText && (Number(portText) < 1024 || Number(portText) > 65535))) {
+          if (status) status.textContent = '请输入有效的房主 IP 地址。';
+          return;
+        }
+        const url = new URL(window.location.href);
+        // 功能：加入其他房主时清除本地房主入口标记，避免误用开房后的进入提示；时间：2026-11-17；作者：lq。
+        url.searchParams.delete('hostroom');
+        url.searchParams.set('lan', '1'); url.searchParams.set('lanhost', host);
+        url.searchParams.set('lanport', String(Number(portText) || 3001));
+        url.searchParams.set('team', team); url.searchParams.set('name', name.slice(0, 16));
+        const map = document.getElementById('room-map')?.value;
+        const lanMap = document.getElementById('lan-map')?.value;
+        if (lanMap || map) url.searchParams.set('map', lanMap || map);
+        window.location.assign(url.href);
+      });
       document.querySelectorAll('[data-menu="help"], [data-menu="settings"], [data-menu="lan"], [data-menu="support"], [data-menu="create"]').forEach((item) => item.addEventListener('click', (event) => {
         event.preventDefault();
         openModal(item.dataset.menu);

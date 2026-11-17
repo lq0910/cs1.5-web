@@ -126,6 +126,14 @@ export class GrenadeEffects {
     }
   }
 
+  /** 功能：整局重开时清除火球、延迟烟雾和灯光，保留已加载的共享贴图；时间：2026-11-17；作者：lq。 */
+  reset(): void {
+    for (const burst of this.bursts) this.remove(burst);
+    this.bursts.length = 0;
+    for (const { light } of this.lights) { this.scene.remove(light); light.dispose(); }
+    this.lights.length = 0;
+  }
+
   /** 功能：按原版帧率播放火球、延迟启动烟雾，尾段平滑消散并释放材质。时间：2026-11-05；作者：lq。 */
   update(dt: number): void {
     for (let index = this.bursts.length - 1; index >= 0; index--) {

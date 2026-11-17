@@ -174,6 +174,7 @@ export function buildWhiteHouse(): MapData {
   ];
 
   return {
+    fingerprint: 'white-house-boxes-v1',
     name: '白房子 (white_house)',
     bounds: {
       mins: v3(-COURTYARD_HALF - WALL_THICKNESS, -COURTYARD_HALF - WALL_THICKNESS, -16),

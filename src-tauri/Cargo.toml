@@ -1,7 +1,7 @@
 [package]
 name = "cs15_web"
 # 功能：桌面端版本与网页版本保持一致。时间：2026-11-05；作者：lq。
-version = "0.1.2"
+version = "0.1.3"
 description = "CS 1.5 Web desktop shell"
 authors = ["lq"]
 edition = "2021"
@@ -11,6 +11,9 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
+# 功能：序列化房间配置、地址与子进程就绪信息；时间：2026-11-17；作者：lq。
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 # 功能：macOS 版通过私有 UIDelegate 回调补齐 WKWebView 的 Pointer Lock 支持；时间：2026-10-31；作者：lq。
 [target.'cfg(target_os = "macos")'.dependencies]
