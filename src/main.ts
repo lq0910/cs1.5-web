@@ -30,6 +30,9 @@ import { loadMap } from './game/map/loader.ts';
 import { buildNavGraph } from './game/nav.ts';
 import { bombSitesFromBsp } from './game/objectives.ts';
 import { Match } from './game/match.ts';
+// 功能：单机和局域网共用限量固定步与可反馈的购买路径；时间：2026-11-18；作者：lq。
+import { fixedFrameSteps } from './game/clock.ts';
+import { purchaseEquipment, purchaseAmmo } from './net/actions.ts';
 // 功能：共享双方人数、地图容量及安全设置解析。时间：2026-10-21；作者：lq。
 import { clampTeamSizes, MAX_TEAM_SIZE, mapTeamSizeLimits, parseMatchSettings, settingNumber, teamSizeForBots } from './game/matchSettings.ts';
 // 功能：在地图里随机放置可射击的小鸡，并在暂停菜单中提供开关。时间：2026-10-21；作者：lq。
@@ -49,7 +52,7 @@ import { bindLocalAssetImporter, installLocalAssetFetch } from './localAssets.ts
 import { loadReleaseNews } from './releaseNews.ts';
 // 功能：接入房主权威快照、局域网输入与地图版本握手；时间：2026-11-17；作者：lq。
 import { applySnapshot, decodeEvents, LAN_PROTOCOL } from './net/protocol.ts';
-import type { PlayerActions, WorldSnapshot } from './net/protocol.ts';
+import type { PlayerActions, PurchaseResult, WorldSnapshot } from './net/protocol.ts';
 import { pmPlayerMove } from './game/movement.ts';
 // 功能：绑定客户端内置房间创建、状态显示和关闭操作；时间：2026-11-17；作者：lq。
 import { bindDesktopHostUI } from './net/desktopHost.ts';
@@ -317,7 +320,7 @@ if (lanEnabled) {
     }
     if (packet.type === 'welcome') {
       lanActorId = Number(packet.actorId);
-      playerActor.id = lanActorId;
+      // 功能：等待快照按 ID 选择权威角色，禁止改写本地 ID 造成角色和皮肤缓存串位；时间：2026-11-18；作者：lq。
       lanConnected = true;
       lanStatus = '已连接房主';
       showMenuToast(lanStatus);
@@ -326,6 +329,11 @@ if (lanEnabled) {
         setGameState(true, true);
         setPauseHint('房间已创建并连接。点击「继续游戏」进入对局；队友可用下方房主地址加入。');
       }
+      return;
+    }
+    // 功能：购买成功或失败均由房主明确回执，连续购枪沿用与单机一致的菜单行为；时间：2026-11-18；作者：lq。
+    if (packet.type === 'purchase-results') {
+      for (const result of packet.results as PurchaseResult[]) showPurchaseResult(result);
       return;
     }
     if (packet.type !== 'snapshot') return;
@@ -490,11 +498,52 @@ let hasLockedMouse = false;
 // --------------------------------------------------------------------- input
 const input = new Input(renderer.webgl.domElement);
 input.attach();
+// 功能：独立保存鼠标灵敏度，刷新、换图和重新开局后恢复个人手感；存储受限时仍可调整。时间：2026-11-18；作者：lq。
+try {
+  const savedSensitivity = localStorage.getItem('cs15-mouse-sensitivity');
+  if (savedSensitivity !== null && savedSensitivity.trim() && Number.isFinite(Number(savedSensitivity))) {
+    input.sensitivity = Math.round(Math.max(0.2, Math.min(20, Number(savedSensitivity))) * 10) / 10;
+  }
+} catch { /* 功能：禁用本地存储时沿用默认灵敏度。时间：2026-11-18；作者：lq。 */ }
+
+/** 功能：同步暂停菜单和动态设置弹窗的滑杆与当前数值。时间：2026-11-18；作者：lq。 */
+function syncMouseSensitivity(): void {
+  document.querySelectorAll<HTMLInputElement>('[data-mouse-sensitivity]').forEach((slider) => {
+    slider.value = input.sensitivity.toFixed(1);
+    const output = slider.parentElement?.querySelector('output');
+    if (output) output.textContent = input.sensitivity.toFixed(1);
+  });
+}
+
+/** 功能：滑杆与快捷键共用范围限制、即时生效及自动保存。时间：2026-11-18；作者：lq。 */
+function setMouseSensitivity(value: number): void {
+  if (!Number.isFinite(value)) return;
+  input.sensitivity = Math.round(Math.max(0.2, Math.min(20, value)) * 10) / 10;
+  try { localStorage.setItem('cs15-mouse-sensitivity', String(input.sensitivity)); }
+  catch { /* 功能：存储不可用时保留本次会话的设置。时间：2026-11-18；作者：lq。 */ }
+  syncMouseSensitivity();
+}
+document.addEventListener('input', (event) => {
+  if (event.target instanceof HTMLInputElement && event.target.matches('[data-mouse-sensitivity]')) {
+    setMouseSensitivity(Number(event.target.value));
+  }
+});
+window.addEventListener('cs15-open-settings', syncMouseSensitivity);
+// 功能：仅在锁定鼠标的对局内响应方括号，每次降低或提高 0.2，避免干扰菜单输入。时间：2026-11-18；作者：lq。
+input.onPress('BracketLeft', () => { if (input.locked) setMouseSensitivity(input.sensitivity - 0.2); });
+input.onPress('BracketRight', () => { if (input.locked) setMouseSensitivity(input.sensitivity + 0.2); });
+syncMouseSensitivity();
 // 功能：记录对局是否已开始以及是否因 Esc 暂停，主菜单和运行 HUD 据此互斥显示。时间：2026-10-01；作者：lq。
 let gameStarted = false;
 let gamePaused = false;
+// 功能：首次主菜单初始化前准备帧计时状态，避免 setGameState 访问未初始化变量中断启动；时间：2026-11-18；作者：lq。
+let accumulator = 0;
+let lastTime = performance.now();
 
 function setGameState(started: boolean, paused: boolean): void {
+  // 功能：暂停和恢复时丢弃未处理帧时间，避免重新进入时补跑旧输入；时间：2026-11-18；作者：lq。
+  accumulator = 0;
+  lastTime = performance.now();
   gameStarted = started;
   gamePaused = started && paused;
   overlay.classList.toggle('hidden', started);
@@ -766,6 +815,20 @@ const menuLabels: Record<string, string> = {
   exit: '感谢游玩 Counter-Strike 1.5 Web',
 };
 let menuToastTimer = 0;
+/** 功能：购买消息使用独立游戏内提示，避免主菜单提示节点不存在时静默失败；时间：2026-11-18；作者：lq。 */
+let purchaseNoticeTimer = 0;
+function showPurchaseResult(result: PurchaseResult): void {
+  const notice = must('game-notice');
+  notice.textContent = result.message;
+  notice.classList.toggle('error', !result.success);
+  notice.classList.add('on');
+  window.clearTimeout(purchaseNoticeTimer);
+  purchaseNoticeTimer = window.setTimeout(() => notice.classList.remove('on'), 3200);
+  if (!result.success || result.kind !== 'buy') return;
+  const item = BUY_MENU.find((entry) => entry.id === result.item);
+  buyMenuOpen = Boolean(item?.grenade);
+  buyCategory = item?.grenade ? 'equipment' : null;
+}
 function showMenuToast(message: string): void {
   if (!menuToast) return;
   menuToast.textContent = message;
@@ -837,8 +900,6 @@ const hud = new Hud({
   radioCaption,
 });
 
-let accumulator = 0;
-let lastTime = performance.now();
 let frames = 0;
 let fpsAccum = 0;
 let fps = 0;
@@ -932,7 +993,8 @@ function clockText(): string {
 function frame(now: number): void {
   const rawDt = (now - lastTime) / 1000;
   lastTime = now;
-  const dt = Math.min(rawDt, 0.25);
+  // 功能：渲染插值仍使用受限帧时间，模拟步长由独立预算控制；时间：2026-11-18；作者：lq。
+  const dt = Math.max(0, Math.min(rawDt, 0.25));
   // 功能：暂停或主菜单阶段不推进固定步长，确保 Esc 后回合计时、BOT 和物理全部冻结。时间：2026-10-01；作者：lq。
   const simulationActive = gameStarted && !gamePaused && (!lanEnabled || lanSnapshotReceived);
 
@@ -952,9 +1014,10 @@ function frame(now: number): void {
     lookPitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, lookPitch + look.pitch));
   }
 
-  if (simulationActive) accumulator += dt;
-  let steps = 0;
-  while (simulationActive && accumulator >= TICK_INTERVAL && steps < 8) {
+  // 功能：每帧最多处理八步并丢弃超额积压，低帧率恢复时不连续快进；时间：2026-11-18；作者：lq。
+  const budget = fixedFrameSteps(accumulator, simulationActive ? rawDt : 0);
+  accumulator = simulationActive ? budget.remainder : 0;
+  for (let step = 0; simulationActive && step < budget.steps; step++) {
     if (lanConnected) {
       if (pendingBuy) lanActions.buy = pendingBuy;
       if (pendingAmmo !== null) lanActions.ammo = pendingAmmo;
@@ -969,15 +1032,18 @@ function frame(now: number): void {
     if (pendingBuy) {
       // 功能：购买成功后装备新枪或手雷并关闭菜单，使数字键购买有即时反馈。时间：2026-09-29；作者：lq。
       const item = BUY_MENU.find((entry) => entry.id === pendingBuy);
-      const bought = match.mode.buy(playerActor, pendingBuy);
-      if (bought && item) {
+      const equipmentBeforePurchase = playerActor.selectedGrenade ?? playerActor.combat.activeSlot;
+      const result = purchaseEquipment(match, playerActor, pendingBuy, simTime);
+      showPurchaseResult(result);
+      if (result.success && item) {
         if (item.slot) {
           previousEquipment = playerActor.selectedGrenade ?? playerActor.combat.activeSlot;
           playerActor.selectedGrenade = null;
           playerActor.combat.selectSlot(item.slot, simTime);
         }
         if (item.grenade) {
-          previousEquipment = playerActor.selectedGrenade ?? playerActor.combat.activeSlot;
+          // 功能：购买手雷后 Q 仍切回购买前手持的武器，而不是新购手雷。时间：2026-11-18；作者：lq。
+          previousEquipment = equipmentBeforePurchase;
           playerActor.selectedGrenade = item.grenade;
           // 功能：购买手雷后保留装备菜单，允许连续购买两枚闪光或补齐三种手雷。时间：2026-09-30；作者：lq。
           buyMenuOpen = true;
@@ -994,7 +1060,7 @@ function frame(now: number): void {
       );
     }
     if (pendingAmmo !== null) {
-      match.mode.buyAmmo(playerActor, pendingAmmo);
+      showPurchaseResult(purchaseAmmo(match, playerActor, pendingAmmo));
       pendingAmmo = null;
     }
     if (pendingGrenade) {
@@ -1056,7 +1122,11 @@ function frame(now: number): void {
     let events: ReturnType<typeof match.update>;
     if (lanConnected && lanSocket?.readyState === WebSocket.OPEN) {
       // 功能：房主每个输入包只接收受限的当前指令和一次性操作，客户端预测本地移动；时间：2026-11-17；作者：lq。
-      pmPlayerMove(playerActor.move, map.collision, { ...playerCmd, yaw: lookYaw, pitch: lookPitch }, TICK_INTERVAL);
+      // 功能：预测只移动存活且可行动的玩家，并使用本地当前朝向，防止死亡/换局时错误移动；时间：2026-11-18；作者：lq。
+      if (playerActor.alive && match.mode.phase !== 'freeze' && match.mode.phase !== 'warmup') {
+        playerActor.move.angles.yaw = lookYaw;
+        pmPlayerMove(playerActor.move, map.collision, { ...playerCmd, yaw: lookYaw, pitch: lookPitch }, TICK_INTERVAL);
+      }
       if (lanSequence++ % 2 === 0 || Object.keys(lanActions).length) {
         lanSocket.send(JSON.stringify({ type: 'input', seq: lanSequence, command, actions: lanActions }));
         lanActions = {};
@@ -1068,7 +1138,7 @@ function frame(now: number): void {
       };
       lanEvents = null;
     } else {
-      simTime += TICK_INTERVAL;
+      // 功能：模拟时间已在本 tick 开头推进一次，禁止重复累加导致射速和动画翻倍；时间：2026-11-18；作者：lq。
       events = match.update(simTime, command);
     }
     // 功能：喷漆成功才添加贴花和空间音效，失败请求不消耗冷却时间。时间：2026-09-30；作者：lq。
@@ -1104,6 +1174,13 @@ function frame(now: number): void {
     audio.listener = (spectator?.alive ? spectator : playerActor).move.origin;
 
     if (events.mode.roundStarted) {
+      // 功能：换局立即清理观战、购买菜单和旧回合提示，并恢复出生朝向；时间：2026-11-18；作者：lq。
+      roundBanner = null;
+      buyMenuOpen = false;
+      buyCategory = null;
+      lookYaw = playerActor.yaw;
+      lookPitch = playerActor.pitch;
+      reloadSoundCues = [];
       killFeed = [];
       spectator = null;
       nextTeamCallAt = simTime + 10 + Math.random() * 8;
@@ -1112,10 +1189,7 @@ function frame(now: number): void {
     if (events.mode.roundEnded) {
       // 功能：平局时显示原版平局结果，避免误报 T 获胜。时间：2026-09-29；作者：lq。
       roundBanner = `${events.mode.roundEnded.winner === 'draw' ? '平局' : `${events.mode.roundEnded.winner === 'ct' ? 'CT' : 'T'} 获胜`} — ${events.mode.roundEnded.reason}`;
-      const banner = roundBanner;
-      window.setTimeout(() => {
-        if (roundBanner === banner) roundBanner = null;
-      }, 3500);
+      // 功能：回合结束提示保留至下一回合开始，避免五秒结算等待被误认为卡死；时间：2026-11-18；作者：lq。
       const winner = events.mode.roundEnded.winner;
       playRadio(winner === 'ct' ? 'ctwin' : winner === 't' ? 'terwin' : 'rounddraw', '无线电', winner === 'ct' ? 'Counter-Terrorists win!' : winner === 't' ? 'Terrorists win!' : 'Round draw.', 0);
     }
@@ -1275,8 +1349,6 @@ function frame(now: number): void {
         { volume: 0.32, dropIfNotReady: true });
     }
 
-    accumulator -= TICK_INTERVAL;
-    steps++;
   }
 
   // ---- view model and camera
@@ -1430,7 +1502,8 @@ function frame(now: number): void {
       scoreT: match.mode.score.t,
       aliveCT,
       aliveT,
-      money: hudActor.unlimitedFunds ? Infinity : hudActor.money,
+      // 功能：观战也显示自己的可用资金，避免误把队友余额当成购买余额；时间：2026-11-18；作者：lq。
+      money: playerActor.unlimitedFunds ? Infinity : playerActor.money,
       kills: localKills,
       deaths: localDeaths,
       bombStatus:
@@ -1478,7 +1551,11 @@ function frame(now: number): void {
       scoreRows: match.actors.map((actor) => ({ name: actor.name, team: actor.team, kills: actor.kills, deaths: actor.deaths, alive: actor.alive, local: actor === playerActor })),
       radioLine: simTime < radioUntil ? radioLine : '',
       respawnIn: Math.max(0, match.mode.timeLeft),
-      matchOver: roundBanner,
+      // 功能：真正整局结束时持续显示结果和重开操作，普通回合结算显示五秒换局倒计时；时间：2026-11-18；作者：lq。
+      matchOver: match.mode.matchOver
+        ? `${match.mode.winner === 'draw' ? '平局' : match.mode.winner === 'ct' ? 'CT 获胜' : 'T 获胜'} · 按 Esc 选择重新开始`
+        : roundBanner ? `${roundBanner} · ${Math.ceil(Math.max(0, match.mode.timeLeft))} 秒后下一回合` : null,
+      matchFinished: match.mode.matchOver,
       render: renderer.info(),
     });
   }

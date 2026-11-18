@@ -68,6 +68,8 @@ export interface HudData {
   radioLine: string;
   respawnIn: number;
   matchOver: string | null;
+  /** 功能：区分普通回合结算和达到胜场后的整局结束；时间：2026-11-18；作者：lq。 */
+  matchFinished?: boolean;
   render: {
     webglVersion: number;
     drawCalls: number;
@@ -99,6 +101,10 @@ export class Hud {
   private readonly radar: HTMLElement;
   private readonly scoreboard: HTMLElement;
   private readonly radioCaption: HTMLElement;
+  /** 功能：用真实时间显示最近一次资金收支，不受暂停和模拟帧速率影响；时间：2026-11-18；作者：lq。 */
+  private lastMoney: number | null = null;
+  private moneyChange = 0;
+  private moneyChangeUntil = 0;
 
   constructor(options: {
     hud: HTMLElement;
@@ -136,6 +142,8 @@ export class Hud {
       `vel    ${fmt(data.velocity.x)} ${fmt(data.velocity.y)} ${fmt(data.velocity.z)}`,
       `speed  ${fmt(data.speed, 6)} u/s   ground ${data.onground ? 'YES' : 'no '}`,
       `spread ${data.coneDeg.toFixed(2)}°  ${data.scoped ? 'SCOPED' : ''}  duck ${data.ducked ? 'YES' : 'no'}`,
+      // 功能：调试面板显示当前鼠标灵敏度，便于验证快捷键调整。时间：2026-11-18；作者：lq。
+      `mouse  ${data.sensitivity.toFixed(1)} · [ 降低 / ] 提高`,
       `draw   webgl${data.render.webglVersion} ${data.render.drawCalls} calls, ${data.render.triangles} tris`,
       '',
       'WASD 移动 · Space 跳 · Ctrl 蹲 · Shift 走',
@@ -183,9 +191,18 @@ export class Hud {
     const reserveText = Number.isFinite(data.reserve) ? String(data.reserve) : '∞';
     // 功能：无限手雷显示 ∞；近战武器仍保留无弹药的横线表示。时间：2026-09-30；作者：lq。
     const ammoText = Number.isFinite(data.ammo) ? `${data.ammo} <small>/ ${reserveText}</small>` : data.holdingGrenade ? '∞' : '—';
+    // 功能：扣款显示红色负数、奖励显示绿色正数，首次显示和无限资金不产生虚假变化；时间：2026-11-18；作者：lq。
+    if (this.lastMoney !== null && Number.isFinite(this.lastMoney) && Number.isFinite(data.money) && data.money !== this.lastMoney) {
+      this.moneyChange = data.money - this.lastMoney;
+      this.moneyChangeUntil = performance.now() + 2200;
+    }
+    this.lastMoney = data.money;
+    const change = performance.now() < this.moneyChangeUntil && Number.isFinite(data.money)
+      ? `<span class="money-change ${this.moneyChange < 0 ? 'spent' : ''}">${this.moneyChange > 0 ? '+' : '−'}$${Math.abs(this.moneyChange)}</span>` : '';
     this.status.innerHTML =
-      `<span class="vitals"><span class="health">✚ <b>${Math.round(data.health)}</b></span><span class="armor">▣ <b>${Math.round(data.armor)}</b></span></span>` +
-      `<span class="money">$${Number.isFinite(data.money) ? data.money : '∞'}</span>` +
+      // 功能：用本地矢量十字与防弹衣轮廓替换字符图标，沿用经典金黄色 HUD 且离线可显示；时间：2026-11-18；作者：lq。
+      `<span class="vitals"><span class="health" aria-label="生命值"><svg class="vital-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 1h8v7h7v8h-7v7H8v-7H1V8h7z"/></svg><b>${Math.round(data.health)}</b></span><span class="armor" aria-label="护甲"><svg class="vital-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 2h5v4h4V2h5v5l3 4v11H2V11l3-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="miter"/><path d="M8 11h8v9H8z"/></svg><b>${Math.round(data.armor)}</b></span></span>` +
+      `<span class="money" aria-label="可用资金">$${Number.isFinite(data.money) ? data.money : '∞'}</span>${change}` +
       `<span class="ammo">${ammoText}</span>`;
 
     // 功能：恢复 CS 经典单表列布局、红蓝队伍、队伍人数/比分、Dead 与 BOT 延迟列。时间：2026-11-05；作者：lq。
@@ -224,12 +241,13 @@ export class Hud {
           )
           .join('')
         : categories.map(([digit, label]) => `<div class="row"><kbd>${digit}</kbd><span>${label}</span></div>`).join('');
-      this.buy.innerHTML = `<h3>购买菜单 <small>${data.buyCategory ?? '选择武器分类'}</small></h3>${rows}<p>0 返回 · B 关闭</p>`;
+      // 功能：购买菜单直接显示当前余额，买不起的装备保留价格以便玩家判断；时间：2026-11-18；作者：lq。
+      this.buy.innerHTML = `<h3>购买菜单 <small>${data.buyCategory ?? '选择武器分类'}</small></h3><p>可用资金：${Number.isFinite(data.money) ? `$${data.money}` : '无限'}</p>${rows}<p>0 返回 · B 关闭</p>`;
     }
 
     // Centre message (death / round over).
     const centreText = data.matchOver
-      ? `比赛结束 — ${data.matchOver}`
+      ? `${data.matchFinished ? '比赛结束' : '回合结束'} — ${data.matchOver}`
       : data.dead
         ? data.spectating
           ? `观战：${data.spectating}`

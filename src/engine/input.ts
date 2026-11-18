@@ -30,8 +30,8 @@ const M_PITCH = 0.022;
 const MAX_LOOK_STEP_DEG = 3;
 
 export class Input {
-  /** Mouse sensitivity, matching CS' `sensitivity` cvar semantics. */
-  sensitivity = 3.2;
+  /** 功能：鼠标灵敏度默认提升到 4.8，供菜单及快捷键实时调整。时间：2026-11-18；作者：lq。 */
+  sensitivity = 4.8;
   inverted = false;
 
   private readonly keys = new Set<string>();

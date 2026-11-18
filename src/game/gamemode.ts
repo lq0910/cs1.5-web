@@ -14,6 +14,8 @@ import type { Actor, Team } from './actors.ts';
 import { WEAPONS } from './weapons.ts';
 import type { WeaponId } from './weapons.ts';
 import { makeWeaponRuntime } from './combat.ts';
+// 功能：自然换局时重建移动状态，清除上一回合蹲伏碰撞体、梯子和弹射状态；时间：2026-11-18；作者：lq。
+import { createMoveState } from './movement.ts';
 
 export type RoundPhase = 'warmup' | 'freeze' | 'live' | 'over';
 export type BombState = 'carried' | 'dropped' | 'planted' | 'defused' | 'exploded';
@@ -272,9 +274,11 @@ export class GameMode {
       }
       const list = spawns[actor.team];
       const spawn = list.length > 0 ? list[counters[actor.team]++ % list.length]! : actor.move.origin;
-      actor.move.origin = v3(spawn.x, spawn.y, spawn.z);
-      actor.move.velocity = v3(0, 0, 0);
-      actor.move.onground = true;
+      // 功能：复活与手动重开使用一致的站立移动状态，防止蹲死或梯子状态带入下一回合卡住；时间：2026-11-18；作者：lq。
+      actor.yaw = (Math.atan2(-spawn.y, -spawn.x) * 180) / Math.PI;
+      actor.pitch = 0;
+      actor.move = createMoveState(v3(spawn.x, spawn.y, spawn.z), actor.yaw);
+      actor.hull = actor.move.hull;
       // 功能：每回合开始恢复玩家 1000 血量，BOT 保持 100，确保增强生命值不会在换局时丢失。时间：2026-10-05；作者：lq。
       // 功能：联机真人复活也遵循统一血量规则；时间：2026-11-17；作者：lq。
       actor.health = actor.maxHealth ?? (actor.isBot ? 100 : 1000);
@@ -532,16 +536,21 @@ export class GameMode {
     return false;
   }
 
-  /** Buys an item during freeze time. */
-  buy(actor: Actor, itemId: string): boolean {
-    // Buying is allowed during warmup, freeze time and the live round (but not
-    // after the match is decided).
-    if (this.phase === 'over') return false;
+  /** 功能：提供统一的购买失败原因，单机与局域网均可显示明确反馈；时间：2026-11-18；作者：lq。 */
+  buyFailure(actor: Actor, itemId: string): string | null {
+    if (!actor.alive) return '已阵亡，请等待下一回合再购买';
+    if (this.phase === 'over' || this.matchOver) return '回合已结束，请等待下一回合再购买';
     const item = BUY_MENU.find((entry) => entry.id === itemId);
-    if (!item) return false;
-    // 功能：拆弹器仅反恐精英可购，枪械和手雷则按本地无限资金要求自由购买。时间：2026-09-29；作者：lq。
-    if (item.kit && actor.team !== 'ct') return false;
-    if (!actor.unlimitedFunds && actor.money < item.price) return false;
+    if (!item) return '该装备不存在';
+    if (item.kit && actor.team !== 'ct') return '只有反恐精英可以购买拆弹器';
+    if (!actor.unlimitedFunds && actor.money < item.price) return `资金不足：需要 $${item.price}，当前 $${actor.money}`;
+    return null;
+  }
+
+  /** 功能：通过统一校验后购买装备，失败时不扣款；时间：2026-11-18；作者：lq。 */
+  buy(actor: Actor, itemId: string): boolean {
+    if (this.buyFailure(actor, itemId)) return false;
+    const item = BUY_MENU.find((entry) => entry.id === itemId)!;
 
     if (!actor.unlimitedFunds) actor.money -= item.price;
     // 功能：购买拆弹器后立即生效，下一回合需重新购入。时间：2026-09-30；作者：lq。
@@ -556,15 +565,12 @@ export class GameMode {
       return true;
     }
     if (item.weapon && item.slot) {
-      const runtime = actor.combat.loadout[item.slot];
+      // 功能：替换整套武器运行状态，清除旧枪的射击冷却、开镜和换弹状态；时间：2026-11-18；作者：lq。
       const def = WEAPONS[item.weapon];
-      runtime.id = item.weapon;
-      runtime.ammo = Number.isFinite(def.magSize) ? def.magSize : 1;
+      const runtime = makeWeaponRuntime(item.weapon);
+      actor.combat.loadout[item.slot] = runtime;
       // 功能：本地玩家购买新枪后立即获得无限备用弹药，不必等下一次模拟 tick 刷新。时间：2026-09-30；作者：lq。
       runtime.reserve = actor.unlimitedAmmo ? Infinity : Math.max(def.magSize * 3, 30);
-      runtime.reloadEndTime = 0;
-      runtime.deployEndTime = 0;
-      runtime.shotIndex = 0;
       return true;
     }
     return true;
@@ -572,7 +578,8 @@ export class GameMode {
 
   /** 功能：B6/B7 按原版购买主副武器备用弹药，尊重弹药上限与经济。时间：2026-09-29；作者：lq。 */
   buyAmmo(actor: Actor, slot: 1 | 2): boolean {
-    if (this.phase === 'over') return false;
+    // 功能：阵亡和整局结束时禁止补弹扣款；时间：2026-11-18；作者：lq。
+    if (!actor.alive || this.phase === 'over' || this.matchOver) return false;
     const runtime = actor.combat.loadout[slot];
     const size = WEAPONS[runtime.id].magSize;
     if (!Number.isFinite(size) || runtime.reserve >= size * 3) return false;

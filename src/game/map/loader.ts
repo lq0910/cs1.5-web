@@ -450,6 +450,8 @@ export async function loadMap(requested?: string | null): Promise<LoadedMap> {
     if (candidate === MOONBASE_ID) {
       const map = buildMoonbase();
       const assets = await loadMoonbaseMaterials();
+      // 功能：无头模拟只读取地图和材质信息，不创建依赖 DOM Canvas 的月球视觉资源；时间：2026-11-18；作者：lq。
+      if (typeof document === 'undefined') return { map, source: 'boxes', materials: assets.materials, note: assets.note };
       const visuals = createMoonbaseVisuals(assets.materials, map.interactions);
       return { map, source: 'boxes', object: visuals.object, materials: assets.materials,
         updateVisuals: visuals.update, note: assets.note };

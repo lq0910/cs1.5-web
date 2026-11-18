@@ -7,8 +7,10 @@ import { createActor } from '../game/actors.ts';
 import type { MapInteractions } from '../game/map/interactions.ts';
 import type { Critter } from '../game/critters.ts';
 
-// 功能：快照新增整局代数并支持重开消息；时间：2026-11-17；作者：lq。
-export const LAN_PROTOCOL = 2;
+// 功能：购买结果消息与计时修复要求房主和客户端使用同一协议版本；时间：2026-11-18；作者：lq。
+export const LAN_PROTOCOL = 3;
+/** 功能：权威购买回执包含商品、结果和可显示的原因；时间：2026-11-18；作者：lq。 */
+export interface PurchaseResult { kind: 'buy' | 'ammo'; item: string; success: boolean; message: string }
 export type NetworkActor = Omit<Actor, 'combat'> & {
   combat: { slot: WeaponSlot; loadout: Record<WeaponSlot, WeaponRuntime> };
 };

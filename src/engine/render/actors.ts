@@ -48,6 +48,8 @@ function aimSequence(actor: Actor): string {
 }
 
 interface ActorView {
+  /** 功能：独立保存建模时的阵营和皮肤，网络快照修改原对象后仍能检测外观变化；时间：2026-11-18；作者：lq。 */
+  appearance: string;
   group: THREE.Group;
   body: THREE.Group;
   actor: Actor;
@@ -106,6 +108,7 @@ export class ActorRenderer {
     body.add(head);
 
     const view: ActorView = {
+      appearance: `${actor.team}:${actor.skinIndex}`,
       group, body, actor, studio: null, weapon: null, weaponId: '', weaponGeneration: 0,
       lastSequence: '', lastFrame: -1, lastPitch: NaN,
       stridePhase: 0, lastOrigin: { ...actor.move.origin },
@@ -171,10 +174,17 @@ export class ActorRenderer {
       if (actor === localActor) continue;
       seen.add(actor.id);
       let view = this.views.get(actor.id);
+      // 功能：同一 ID 的阵营或皮肤变化时重建模型，异步加载旧模型时由 view 引用校验自动丢弃；时间：2026-11-18；作者：lq。
+      if (view && view.appearance !== `${actor.team}:${actor.skinIndex}`) {
+        this.removeView(actor.id, view);
+        view = undefined;
+      }
       if (!view) {
         view = this.build(actor);
         this.views.set(actor.id, view);
       }
+      // 功能：快照可能替换角色对象，渲染缓存随时跟随最新权威对象；时间：2026-11-18；作者：lq。
+      view.actor = actor;
 
       // 功能：20Hz 左右的局域网快照以指数插值显示，长时间卡顿或复活传送则立即对齐权威位置；时间：2026-11-17；作者：lq。
       const elapsed = view.renderAt > 0 ? Math.max(0, now - view.renderAt) : 0;
@@ -264,11 +274,22 @@ export class ActorRenderer {
 
     for (const [id, view] of [...this.views]) {
       if (seen.has(id)) continue;
-      this.scene.remove(view.group);
-      if (view.studio) disposeStudio(view.studio);
-      if (view.weapon) disposeStudio(view.weapon);
-      this.views.delete(id);
+      this.removeView(id, view);
     }
+  }
+
+  /** 功能：移除失效人物外观并释放正式模型或占位模型资源，避免换阵营时泄漏；时间：2026-11-18；作者：lq。 */
+  private removeView(id: number, view: ActorView): void {
+    this.scene.remove(view.group);
+    if (view.weapon) disposeStudio(view.weapon);
+    if (view.studio) disposeStudio(view.studio);
+    else view.body.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
+      child.geometry.dispose();
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      for (const material of materials) material.dispose();
+    });
+    this.views.delete(id);
   }
 
   /** 功能：取得 BOT 可见枪管最前端的世界坐标，供枪口火焰和弹道使用。时间：2026-09-29；作者：lq。 */
@@ -282,11 +303,7 @@ export class ActorRenderer {
   }
 
   dispose(): void {
-    for (const view of this.views.values()) {
-      this.scene.remove(view.group);
-      if (view.studio) disposeStudio(view.studio);
-      if (view.weapon) disposeStudio(view.weapon);
-    }
-    this.views.clear();
+    // 功能：销毁渲染器时复用人物资源释放路径；时间：2026-11-18；作者：lq。
+    for (const [id, view] of this.views) this.removeView(id, view);
   }
 }

@@ -5,6 +5,7 @@ import { makeTestRoom } from '../src/game/map/build.ts';
 import { Match, idleCommand } from '../src/game/match.ts';
 import { snapshotWorld, applySnapshot, encodeEvents, decodeEvents, mapFingerprint } from '../src/net/protocol.ts';
 import { IN_FORWARD, TICK_INTERVAL } from '../src/game/constants.ts';
+import { applyPlayerActions } from '../src/net/actions.ts';
 
 test('LAN seats are controlled by player IDs and survive a snapshot round-trip', () => {
   const map = makeTestRoom(1024);
@@ -15,6 +16,10 @@ test('LAN seats are controlled by player IDs and survive a snapshot round-trip',
   assert.ok(ct && t);
   assert.equal(ct.maxHealth, 100);
   assert.equal(ct.unlimitedFunds, false);
+  assert.equal(ct.money, 8000);
+  ct.money = 1200;
+  host.releaseSeat(ct);
+  assert.equal(host.claimSeat('ct', 'Alice Reconnected')?.money, 1200, 'reconnecting must not grant the opening balance twice');
   assert.equal(host.claimSeat('ct', 'Charlie')?.team, 'ct');
 
   const command = { ...idleCommand(ct.yaw), buttons: IN_FORWARD, forwardmove: 400 };
@@ -31,6 +36,25 @@ test('LAN seats are controlled by player IDs and survive a snapshot round-trip',
   applySnapshot(host, snapshot);
   assert.equal(ct.move.origin.x, before);
   assert.equal(decodeEvents(wireEvents, host.actors).shots.length, 0);
+});
+
+/** 功能：局域网开局资金应覆盖主枪、副枪、护甲与常见手雷的完整购买组合；时间：2026-11-18；作者：lq。 */
+test('LAN opening money buys a primary, pistol, armor and a grenade set', () => {
+  const host = new Match({ map: makeTestRoom(1024), graph: null, sites: [], teamSize: 1, multiplayer: true });
+  host.startNow();
+  const player = host.claimSeat('ct', 'Buyer')!;
+  assert.equal(player.money, 8000);
+  for (const item of ['awp', 'deagle', 'armor', 'hegrenade', 'flashbang', 'smokegrenade']) {
+    const result = applyPlayerActions(host, player, { buy: item }, 0)[0];
+    assert.equal(result?.success, true, result?.message);
+  }
+  assert.equal(player.combat.loadout[1].id, 'awp');
+  assert.equal(player.combat.loadout[2].id, 'deagle');
+  assert.equal(player.armor, 100);
+  assert.equal(player.grenades.hegrenade, 1);
+  assert.equal(player.grenades.flashbang, 1);
+  assert.equal(player.grenades.smokegrenade, 1);
+  assert.equal(player.money, 800);
 });
 
 // 功能：重开后真人保持原席位与昵称，客户端按新代数接收第一回合且不继承旧经济；时间：2026-11-17；作者：lq。
@@ -56,7 +80,7 @@ test('LAN restart keeps connected seats and synchronizes a fresh game', () => {
   assert.equal(t.isBot, false);
   assert.equal(ct.health, 100);
   assert.equal(t.health, 100);
-  assert.equal(ct.money, 800);
+  assert.equal(ct.money, 8000);
   assert.equal(ct.kills, 0);
   assert.equal(ct.combat.loadout[1].id, 'knife');
   const snapshot = JSON.parse(JSON.stringify(snapshotWorld(host, 6400, 100, [], [], 1)));

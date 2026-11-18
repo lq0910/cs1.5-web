@@ -144,6 +144,12 @@
   #pause-menu button { padding: 10px 14px; border: 1px solid rgba(255,255,255,.2); border-radius: 4px; background: #202c35; color: #e5e7eb; cursor: pointer; font: inherit; }
   #pause-menu button.primary { border-color: #eab308; background: #80631a; color: #fff4bd; }
   #pause-menu button:hover { filter: brightness(1.15); }
+  /* 功能：暂停时直接调节鼠标灵敏度，数值与滑杆在窄屏内完整显示。时间：2026-11-18；作者：lq。 */
+  .mouse-sensitivity { margin-bottom: 18px; text-align: left; color: #e5e7eb; font-size: 13px; }
+  .mouse-sensitivity > div { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+  .mouse-sensitivity input { flex: 1; min-width: 0; accent-color: #eab308; }
+  .mouse-sensitivity output { min-width: 3ch; color: #facc15; font-variant-numeric: tabular-nums; }
+  .mouse-sensitivity small { display: block; margin-top: 6px; color: #aeb6bd; }
   /* 功能：暂停时显示轻量项目支持位，不遮挡主要操作。时间：2026-10-30；作者：lq。 */
   .pause-support { display: flex; align-items: center; gap: 12px; margin: 0 0 18px; padding: 10px; border: 1px solid rgba(255,255,255,.12); border-radius: 5px; background: rgba(0,0,0,.22); text-align: left; }
   .pause-support img { width: 72px; height: 72px; flex: 0 0 72px; object-fit: cover; background: #fff; }
@@ -167,9 +173,15 @@
   #crosshair.scoped { display: none; }
   /* 功能：恢复生命、护甲、弹药、回合、击杀提示、雷达和购买菜单等战斗 HUD。时间：2026-10-01；作者：lq。 */
   #status { position: fixed; left: 0; right: 0; bottom: 10px; height: 74px; z-index: 30; color: #e6c46f; font: 15px Tahoma, Arial, sans-serif; text-shadow: 1px 2px #17120a; pointer-events: none; }
-  #status .vitals { position: absolute; left: 24px; bottom: 0; display: flex; gap: 22px; font-size: 24px; }
-  #status .vitals b { color: #f1d184; font-size: 27px; font-weight: 600; }
-  #status .money { position: absolute; left: 24px; bottom: 47px; font-size: 18px; }
+  /* 功能：左下角生命与护甲使用经典金黄色图标、等宽数字和固定间距，防止符号随系统字体变成方框；时间：2026-11-18；作者：lq。 */
+  #status .vitals { position: absolute; left: 24px; bottom: 0; display: flex; gap: 26px; font-size: 24px; }
+  #status .vitals > span { display: inline-flex; align-items: center; gap: 8px; }
+  #status .vitals b { color: #f1d184; font: 700 30px/1 Consolas, 'Courier New', monospace; font-variant-numeric: tabular-nums; }
+  #status .vital-icon { width: 22px; height: 24px; fill: currentColor; flex: none; filter: drop-shadow(1px 2px 1px #17120a); }
+  /* 功能：资金按 CS 原版放在右下角弹药上方，以绿色等宽数字常驻显示并附带收支变化；时间：2026-11-18；作者：lq。 */
+  #status .money { position: absolute; right: 25px; bottom: 48px; color: #88c95b; font: 700 30px/1 Consolas, 'Courier New', monospace; font-variant-numeric: tabular-nums; letter-spacing: 1px; text-align: right; text-shadow: 1px 2px 2px #000; }
+  #status .money-change { position: absolute; right: 25px; bottom: 86px; color: #88c95b; font: 700 21px/1 Consolas, 'Courier New', monospace; text-shadow: 1px 2px 2px #000; }
+  #status .money-change.spent { color: #e96048; }
   #status .ammo { position: absolute; right: 25px; bottom: 0; font-size: 34px; line-height: 1; }
   #status .ammo small { display: inline; margin-left: 4px; font-size: 21px; }
   #roundbar { position: fixed; top: 11px; left: 50%; transform: translateX(-50%); z-index: 30; display: flex; align-items: center; gap: 14px; color: #e6c46f; font: 14px Tahoma, Arial, sans-serif; text-shadow: 1px 2px #17120a; pointer-events: none; }
@@ -202,6 +214,11 @@
   #buymenu .row { display: flex; gap: 10px; padding: 4px 0; }
   #buymenu .row em { margin-left: auto; color: #e7c77d; font-style: normal; }
   #buymenu kbd { min-width: 18px; padding: 1px 5px; border: 1px solid #a68b4a; background: rgba(90,70,29,.35); color: #f1d184; text-align: center; }
+  /* 功能：购买结果在游戏内独立显示，失败时突出原因，资金不足的商品弱化显示；时间：2026-11-18；作者：lq。 */
+  #buymenu .poor { opacity: .5; }
+  #game-notice { position: fixed; left: 50%; top: 25%; transform: translateX(-50%); z-index: 36; display: none; max-width: 80vw; padding: 10px 16px; background: rgba(12,12,9,.9); border: 1px solid #a68b4a; color: #e7c77d; font: 15px Tahoma, Arial, sans-serif; text-align: center; pointer-events: none; }
+  body.game-active:not(.game-paused) #game-notice.on { display: block; }
+  #game-notice.error { color: #ffad91; border-color: #c47b60; }
   /* 功能：恢复 GoldSrc VGUI 计分板的透明黑底、细边线、紧凑等列与阵营色，取消卡片阴影。时间：2026-11-05；作者：lq。 */
   #scoreboard { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); box-sizing: border-box; width: min(640px, 94vw); min-height: min(420px, 88vh); max-height: 88vh; overflow: hidden; z-index: 35; display: none; padding: 8px 14px 18px; border: 1px solid rgba(100,100,100,.6); background: rgba(0,0,0,.62); color: #ffb000; font: 13px Tahoma, Arial, sans-serif; }
   #scoreboard.on { display: block; }
@@ -599,6 +616,12 @@
     <p id="pause-state-description">对局状态已冻结，选择继续即可回到当前回合。</p>
     <!-- 功能：鼠标锁定失败时给出可执行的恢复建议。时间：2026-10-31；作者：lq。 -->
     <p id="pause-hint" hidden></p>
+    <!-- 功能：Esc 暂停菜单提供即时生效并自动保存的鼠标灵敏度设置。时间：2026-11-18；作者：lq。 -->
+    <div class="mouse-sensitivity">
+      <label for="pause-mouse-sensitivity">鼠标灵敏度</label>
+      <div><input id="pause-mouse-sensitivity" data-mouse-sensitivity type="range" min="0.2" max="20" step="0.1" value="4.8"><output for="pause-mouse-sensitivity">4.8</output></div>
+      <small>越大越快 · 自动保存 · 游戏中 [ 降低 / ] 提高</small>
+    </div>
     <!-- 功能：房主暂停时显示队友加入地址，提供主动关闭房间入口；时间：2026-11-17；作者：lq。 -->
     <p id="hosted-room-status" hidden aria-live="polite"></p>
     <!-- 功能：暂停菜单提供不打断操作的公众号和交流群提示。时间：2026-10-30；作者：lq。 -->
@@ -618,6 +641,8 @@
 <!-- 功能：为现有 FPS HUD 与阵营选择逻辑保留兼容节点，主菜单阶段隐藏。时间：2026-10-01；作者：lq。 -->
 <div id="crosshair"><span class="top"></span><span class="bottom"></span><span class="left"></span><span class="right"></span></div>
 <div id="hitmarker"></div><div id="flashbang"></div><div id="bombflash"></div><div id="scope"></div><div id="status"></div><div id="roundbar"></div><div id="feed"></div><div id="radio-caption"></div><div id="buymenu"></div><div id="centre"></div><div id="radar"></div><div id="scoreboard"></div><div id="hud"></div>
+<!-- 功能：为购买成功和失败原因提供实际存在的游戏内提示节点；时间：2026-11-18；作者：lq。 -->
+<div id="game-notice" role="status" aria-live="polite"></div>
 <div id="team-select" hidden><button id="team-ct" type="button">CT</button><button id="team-t" type="button">T</button></div>
 <div id="nomap" hidden></div>
 
@@ -658,7 +683,8 @@
           settings: {
             title: '游戏设置 / SETTINGS',
             // 功能：双方人数分别设置，并增加地图小鸡开关；加载地图后由游戏模块填充上限。时间：2026-10-21；作者：lq。
-            body: `<div class="setting-row"><label for="setting-team">玩家阵营</label><select id="setting-team"><option value="ct">反恐精英 CT</option><option value="t">恐怖分子 T</option></select></div><div class="setting-row"><label for="setting-skill">机器人难度</label><select id="setting-skill"><option value="0.15">简单</option><option value="0.45">普通</option><option value="0.75">困难</option><option value="0.95">专家</option></select></div><div class="setting-row"><label for="setting-ct">CT 人数</label><div><input id="setting-ct" type="range" min="1" max="6" step="1" value="5" disabled /><output id="setting-ct-value" for="setting-ct">地图加载中…</output></div></div><div class="setting-row"><label for="setting-t">T 人数</label><div><input id="setting-t" type="range" min="1" max="6" step="1" value="5" disabled /><output id="setting-t-value" for="setting-t">地图加载中…</output></div></div><p id="setting-team-hint" class="setting-hint">人数包含你自己；把本方设为 1 人即可独自作战。</p><div class="setting-row"><label for="setting-critters">地图小鸡</label><div><label class="setting-check"><input id="setting-critters" type="checkbox" checked /> 每回合随机生成可射击的小鸡</label></div></div><p id="setting-bots-limit" class="setting-hint">人数上限按地图出生点自动调整。</p><p class="setting-note">小鸡彩蛋来自原版 cs_italy 的经典设定：可射击、掉落羽毛，不影响比分与经济。</p><div class="menu-modal-actions"><button data-close-modal>取消</button><button id="apply-match-settings" class="primary" data-apply-settings disabled>应用并重新开局</button></div>`
+            // 功能：鼠标设置即时生效并自动保存，无需应用重新开局。时间：2026-11-18；作者：lq。
+            body: `<div class="mouse-sensitivity"><label for="setting-mouse-sensitivity">鼠标灵敏度</label><div><input id="setting-mouse-sensitivity" data-mouse-sensitivity type="range" min="0.2" max="20" step="0.1" value="4.8"><output for="setting-mouse-sensitivity">4.8</output></div><small>越大越快 · 即时生效并自动保存，无需重新开局</small></div><div class="setting-row"><label for="setting-team">玩家阵营</label><select id="setting-team"><option value="ct">反恐精英 CT</option><option value="t">恐怖分子 T</option></select></div><div class="setting-row"><label for="setting-skill">机器人难度</label><select id="setting-skill"><option value="0.15">简单</option><option value="0.45">普通</option><option value="0.75">困难</option><option value="0.95">专家</option></select></div><div class="setting-row"><label for="setting-ct">CT 人数</label><div><input id="setting-ct" type="range" min="1" max="6" step="1" value="5" disabled /><output id="setting-ct-value" for="setting-ct">地图加载中…</output></div></div><div class="setting-row"><label for="setting-t">T 人数</label><div><input id="setting-t" type="range" min="1" max="6" step="1" value="5" disabled /><output id="setting-t-value" for="setting-t">地图加载中…</output></div></div><p id="setting-team-hint" class="setting-hint">人数包含你自己；把本方设为 1 人即可独自作战。</p><div class="setting-row"><label for="setting-critters">地图小鸡</label><div><label class="setting-check"><input id="setting-critters" type="checkbox" checked /> 每回合随机生成可射击的小鸡</label></div></div><p id="setting-bots-limit" class="setting-hint">人数上限按地图出生点自动调整。</p><p class="setting-note">小鸡彩蛋来自原版 cs_italy 的经典设定：可射击、掉落羽毛，不影响比分与经济。</p><div class="menu-modal-actions"><button data-close-modal>取消</button><button id="apply-match-settings" class="primary" data-apply-settings disabled>应用并重新开局</button></div>`
           },
           lan: {
             title: '局域网对战 / LAN GAME',

@@ -5,7 +5,10 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { buildNavGraph } from '../src/game/nav.ts';
 import { bombSitesFromBsp } from '../src/game/objectives.ts';
 import { Match } from '../src/game/match.ts';
-import { BUY_MENU } from '../src/game/gamemode.ts';
+// 功能：房主共用固定步预算和装备购买回执；时间：2026-11-18；作者：lq。
+import { fixedFrameSteps } from '../src/game/clock.ts';
+import { applyPlayerActions } from '../src/net/actions.ts';
+import { TICK_INTERVAL } from '../src/game/constants.ts';
 import { mapTeamSizeLimits } from '../src/game/matchSettings.ts';
 import { LAN_PROTOCOL, encodeEvents, snapshotWorld } from '../src/net/protocol.ts';
 import type { InputPacket, PlayerActions, RoomInfo, WorldSnapshot } from '../src/net/protocol.ts';
@@ -46,26 +49,6 @@ function addresses(): string[] {
 function playerName(value: unknown): string {
   const clean = String(value ?? '').replace(/[^\p{L}\p{N}_ -]/gu, '').trim().slice(0, 16);
   return clean || 'Player';
-}
-
-function applyActions(match: Match, client: Client, actions: PlayerActions, now: number): void {
-  const { actor } = client;
-  if (!actor.alive) return;
-  if (actions.buy) {
-    const item = BUY_MENU.find((entry) => entry.id === actions.buy);
-    if (item && match.mode.buy(actor, item.id)) {
-      if (item.slot) { actor.selectedGrenade = null; actor.combat.selectSlot(item.slot, now); }
-      if (item.grenade) actor.selectedGrenade = item.grenade;
-    }
-  }
-  if (actions.slot) { actor.selectedBomb = false; actor.selectedGrenade = null; actor.combat.selectSlot(actions.slot, now); }
-  if (actions.grenade && actor.grenades[actions.grenade] > 0) {
-    actor.selectedBomb = false; actor.selectedGrenade = actions.grenade;
-  }
-  if (actions.bomb !== undefined) { actor.selectedBomb = actions.bomb; actor.selectedGrenade = null; }
-  if (actions.ammo) match.mode.buyAmmo(actor, actions.ammo);
-  if (actions.drop) match.dropCurrentWeapon(actor, now);
-  if (actions.pickup) match.pickupNearestWeapon(actor, now);
 }
 
 async function start(): Promise<void> {
@@ -155,18 +138,29 @@ async function start(): Promise<void> {
   console.log(`WebSocket: ws://<房主局域网IP>:${port} · matching local BSP required`);
   // 功能：监听成功后才通知桌面壳，避免创建按钮在端口冲突或地图失败时误报成功；时间：2026-11-17；作者：lq。
   console.log(`CS15_LAN_READY ${JSON.stringify({ map: mapName, port, addresses: addresses(), ctSize, tSize, skill, critters })}`);
+  // 功能：按真实经过时间分配 64Hz 模拟步，避免 Node 将 15.625ms 定时器取整造成房间整体加速；时间：2026-11-18；作者：lq。
+  let previousTime = performance.now();
+  let accumulator = 0;
   const timer = setInterval(() => {
-    tick++; simTime += 1 / 64;
+    const currentTime = performance.now();
+    const budget = fixedFrameSteps(accumulator, (currentTime - previousTime) / 1000);
+    previousTime = currentTime;
+    accumulator = budget.remainder;
+    for (let step = 0; step < budget.steps; step++) {
+    tick++; simTime += TICK_INTERVAL;
     const commands = new Map<number, InputPacket['command']>();
     for (const client of clients.values()) {
       commands.set(client.actor.id, client.latest.command);
       if (Object.keys(client.pending).length) {
-        applyActions(match, client, client.pending, simTime);
+        const results = applyPlayerActions(match, client.actor, client.pending, simTime);
+        if (results.length && client.socket.readyState === WebSocket.OPEN) {
+          client.socket.send(JSON.stringify({ type: 'purchase-results', results }));
+        }
         client.pending = {};
       }
     }
     pendingEvents.push(encodeEvents(match.update(simTime, undefined, commands)));
-    if (tick % 3 !== 0) return;
+    if (tick % 3 !== 0) continue;
     const events = pendingEvents; pendingEvents = [];
     for (const client of clients.values()) {
       if (client.socket.readyState !== WebSocket.OPEN) continue;
@@ -174,7 +168,8 @@ async function start(): Promise<void> {
       snapshot.ack = client.ack;
       client.socket.send(JSON.stringify(snapshot));
     }
-  }, 1000 / 64);
+    }
+  }, TICK_INTERVAL * 1000);
   // 功能：桌面壳异常退出时也停止子进程；正常关闭立即释放玩家连接、计时器与监听端口；时间：2026-11-17；作者：lq。
   const parentTimer = parentPid > 0 ? setInterval(() => {
     try { process.kill(parentPid, 0); } catch { stop(); }

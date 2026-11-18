@@ -157,6 +157,8 @@ function groupSpawnsByTeam(spawns: { origin: Vec3; team: 'ct' | 't' }[]): { ct: 
 
 const BOT_NAMES_T = ['Vitaliy', 'Rasim', 'Anton', 'Sergei', 'Nikita', 'Oleg'];
 const BOT_NAMES_CT = ['Alex', 'Chris', 'Danny', 'Emil', 'Frank', 'Gus'];
+/** 功能：局域网真人开局至少可购买一把主枪、副枪、防护装备和数枚手雷；时间：2026-11-18；作者：lq。 */
+const LAN_START_MONEY = 8000;
 
 export class Match {
   readonly actors: Actor[] = [];
@@ -169,6 +171,8 @@ export class Match {
   private readonly graph: NavGraph | null;
   private readonly sites: ObjectiveArea[];
   private readonly skill: number;
+  /** 功能：记录当前比赛是否由局域网房主运行，供真人开局经济与重开逻辑使用；时间：2026-11-18；作者：lq。 */
+  private readonly multiplayer: boolean;
   // 功能：根据 BOT 难度缩放 BOT 子弹伤害；简单模式除了降低命中率，也降低单发伤害。时间：2026-10-05；作者：lq。
   private readonly botDamageMultiplier: number;
   /** 功能：双方队伍人数，玩家计入本地玩家所属阵营。时间：2026-10-21；作者：lq。 */
@@ -182,6 +186,8 @@ export class Match {
   private readonly randomness: () => number;
   /** 功能：BOT 购买使用独立随机序列，避免影响战斗和导航的随机行为。时间：2026-09-29；作者：lq。 */
   private readonly shoppingRandom: () => number;
+  /** 功能：记录已接管过的真人席位，断线重连不重复发放开局资金；时间：2026-11-18；作者：lq。 */
+  private readonly claimedSeats = new Set<number>();
   readonly grenadeProjectiles: GrenadeProjectile[] = [];
   private nextGrenadeId = 1;
   /** 功能：原版 decalfrequency 默认 30 秒，仅成功喷到表面后进入冷却。时间：2026-09-30；作者：lq。 */
@@ -210,6 +216,7 @@ export class Match {
   private bombDefuser: Actor | null = null;
 
   constructor(options: MatchOptions) {
+    this.multiplayer = options.multiplayer ?? false;
     this.world = options.map.collision;
     this.map = options.map;
     this.graph = options.graph;
@@ -217,7 +224,8 @@ export class Match {
     // 功能：默认使用简单 BOT 难度，降低玩家遭遇的命中与反应压力。时间：2026-09-29；作者：lq。
     this.skill = options.skill ?? 0.15;
     // 功能：简单难度 BOT 造成约 45% 武器伤害，最高难度恢复 100% 伤害。时间：2026-10-05；作者：lq。
-    this.botDamageMultiplier = options.multiplayer ? 1 : 0.35 + this.skill * 0.65;
+    // 功能：单机和局域网统一遵循 BOT 难度伤害，避免简单房间被强制满伤害秒杀；时间：2026-11-18；作者：lq。
+    this.botDamageMultiplier = 0.35 + this.skill * 0.65;
     // 功能：默认采用 5V5；显式人数供浏览器与无头测试使用，浏览器已按出生点容量收敛。
     // 功能：模拟层仍限制在 1..6，允许测试地图复用出生点，不改变既有物理与回合逻辑。时间：2026-10-21；作者：lq。
     const defaultSize = options.teamSize ?? Math.min(DEFAULT_TEAM_SIZE, mapTeamSizeLimit(options.map.spawns));
@@ -351,7 +359,7 @@ export class Match {
     this.mode.setActors(this.actors);
   }
 
-  /** 功能：真人接管现有 BOT，继承当前生命和装备，避免中途加入复活刷物资；时间：2026-11-17；作者：lq。 */
+  /** 功能：真人接管现有 BOT，首接补足开局资金，重连保留经济以避免重复领钱；时间：2026-11-18；作者：lq。 */
   claimSeat(team: Team, name: string): Actor | null {
     const actor = this.actors.find((candidate) => candidate.team === team && candidate.isBot);
     if (!actor) return null;
@@ -361,6 +369,11 @@ export class Match {
     actor.health = Math.min(100, actor.health);
     actor.unlimitedFunds = false;
     actor.unlimitedAmmo = false;
+    if (!this.claimedSeats.has(actor.id)) {
+      // 功能：初次接管的真人至少拥有开局额度，已有更高余额时保留；时间：2026-11-18；作者：lq。
+      actor.money = Math.max(actor.money, LAN_START_MONEY);
+      this.claimedSeats.add(actor.id);
+    }
     return actor;
   }
 
@@ -404,7 +417,8 @@ export class Match {
     for (const actor of this.actors) {
       actor.kills = 0;
       actor.deaths = 0;
-      actor.money = actor.unlimitedFunds ? Infinity : 800;
+      // 功能：局域网整局重开给真人恢复充足开局资金，BOT 与单机经济仍回到经典 $800；时间：2026-11-18；作者：lq。
+      actor.money = actor.unlimitedFunds ? Infinity : (!actor.isBot && this.multiplayer ? LAN_START_MONEY : 800);
       actor.armor = 0;
       actor.hasDefuseKit = false;
       actor.grenades = actor.unlimitedFunds
